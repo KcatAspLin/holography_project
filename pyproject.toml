@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 name = "niarb"
 version = "0.0.1"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = "==3.11"
 license = { file = "LICENSE" }
 authors = [{ name = "Ho Yin Chau" }]
 dependencies = [
@@ -17,13 +17,13 @@ dependencies = [
     "seaborn",
     "statsmodels",
     "matplotlib",
-    "torch >= 2.4.0, < 2.6.0",  # version 2.6.0 is causing a test to fail
-    "torchdiffeq",
-    "hyclib >= 0.1.40",
-    "tdfl >= 0.1.15",
+    "torch == 2.5.1",
+    "torchdiffeq == 0.2.5",
+    "hyclib == 0.1.40",
+    "tdfl == 0.1.15",
     "tqdm",
-    "ricciardi >= 0.1.4",
-    "torch-bessel >= 0.0.5",
+    "ricciardi == 0.1.5",
+    "torch-bessel == 0.0.5",
 ]
 
 [project.scripts]
