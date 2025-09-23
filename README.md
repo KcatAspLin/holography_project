@@ -1,7 +1,7 @@
 ![tests workflow status](https://github.com/hchau630/chau-2024-exact/actions/workflows/tests.yml/badge.svg)
 [![codecov](https://codecov.io/gh/hchau630/chau-2024-exact/graph/badge.svg?token=WRKQLIIIP6)](https://codecov.io/gh/hchau630/chau-2024-exact)
 
-# Source code for the preprint [Chau et al. 2024](https://doi.org/10.1101/2024.12.27.630558)
+# Source code for [Chau et al. 2025](https://doi.org/10.1073/pnas.2426758122)
 ## Setup
 0) (Optional) Git fork the repository
 1) Git clone the repository/the fork
