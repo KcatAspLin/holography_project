@@ -40,6 +40,14 @@ def mapped(func, mapping):
     return wrapper
 
 
+def _accepts_keyword(func, name):
+    try:
+        sig = inspect.signature(func)
+    except (TypeError, ValueError):
+        return False
+    return name in sig.parameters
+
+
 def figplot(
     data: DataFrame,
     func: Callable[[DataFrame], FacetGrid] | str | Sequence[str],
@@ -102,7 +110,10 @@ def figplot(
 
     logger.debug(f"data:\n{data}")
 
-    g = mapped(func, mapping)(data, stat=stat, **kwargs)
+    plot_kwargs = kwargs.copy()
+    if _accepts_keyword(func, "stat"):
+        plot_kwargs["stat"] = stat
+    g = mapped(func, mapping)(data, **plot_kwargs)
     if stat:
         func = lmstatplot if func == lmplot else statplot
         func = mapped(func, mapping)
@@ -208,13 +219,14 @@ def lmstatplot(
     color=None,
     label=None,
     marker=None,
+    hue=None,
     **kwargs,
 ):
     fit = sm.OLS(data[y], sm.add_constant(data[x])).fit()
     stats = [
-        f"Slope: {fit.params[1]:.1e}$\pm${fit.bse[1]:.1e}",
-        f"Intercept: {fit.params[0]:.1e}$\pm${fit.bse[0]:.1e}",
-        f"$R^2$: {fit.rsquared:.2g}, P-value: {fit.pvalues[1]:.1e}",
+        f"Slope: {fit.params.iloc[1]:.1e}$\pm${fit.bse.iloc[1]:.1e}",
+        f"Intercept: {fit.params.iloc[0]:.1e}$\pm${fit.bse.iloc[0]:.1e}",
+        f"$R^2$: {fit.rsquared:.2g}, P-value: {fit.pvalues.iloc[1]:.1e}",
     ]
     text = AnchoredText("\n".join(stats), loc, **kwargs)
     text.patch.set_alpha(alpha)

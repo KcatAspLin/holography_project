@@ -1,0 +1,15 @@
+name: chau-2024-exact
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - setuptools>=64
+  - wheel
+  - git
+  - curl
+  - unzip
+  - compilers
+  - make
+  - pip:
+      - -r requirements.txt

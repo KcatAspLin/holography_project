@@ -2,7 +2,8 @@
 paper/oldenburg_data
 
 # don't include slurm log files that I have
-slurm
+slurm/*
+!slurm/*.sbatch
 
 # temporary
 paper/model_fits/disordered/runs
@@ -185,3 +186,29 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Patches
+*.patch
+
+# Logs 
+logs/
+
+# Miniforge
+Miniforge3-Linux-x86_64.sh
+*.sh
+*.tar.gz
+*.zip
+*.pt
+*.pth
+*.h5
+*.ckpt
+data/
+datasets/
+outputs/
+results/
+logs/
+__pycache__/
+.env
+.venv/
+Miniforge3-Linux-x86_64.sh
+Miniforge3-Linux-x86_64.sh
