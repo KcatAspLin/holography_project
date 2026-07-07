@@ -11,7 +11,7 @@ import pandas as pd
 import numpy as np
 import hyclib as lib
 
-from niarb import neurons, special, nn, utils, perturbation, random
+from niarb import atlas, neurons, special, nn, utils, perturbation, random
 from niarb.nn.modules.v1 import compute_osi_scale, _cdim
 from niarb.cell_type import CellType
 from niarb.nn import functional
@@ -337,6 +337,20 @@ class TestV1:
         model.prob_kernel = nn.Prod([])
         expected = model(x, output="weight", ndim=2, to_dataframe=False).dense()
         torch.testing.assert_close(out.mean(dim=0), expected, atol=1e-5, rtol=5e-2)
+
+    def test_visual_field_map_requires_matrix_response(self):
+        model = nn.V1(
+            ["space", "ori"],
+            use_psi=True,
+            use_visual_field_tuning=True,
+            visual_field_map=atlas.IdentityVisualFieldMap(),
+            mode="analytical",
+        )
+        x = neurons.as_grid(0, N_space=(2, 2), N_ori=2, space_extent=(2, 2))
+        x["dh"] = torch.zeros(x.shape)
+        x["dh"][0, 0, 0] = 1.0
+        with pytest.raises(ValueError, match="visual_field_map"):
+            model(x, output="response", ndim=x.ndim)
 
     def test_weights_dataframe(self):
         with random.set_seed(0):

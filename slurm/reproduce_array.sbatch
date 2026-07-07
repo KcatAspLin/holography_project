@@ -20,16 +20,7 @@ if command -v module >/dev/null 2>&1; then
   module load mamba || module load miniconda || module load anaconda || true
 fi
 
-if command -v mamba >/dev/null 2>&1; then
-  eval "$(mamba shell.bash hook)"
-elif command -v conda >/dev/null 2>&1; then
-  eval "$(conda shell.bash hook)"
-else
-  echo "ERROR: conda or mamba is required." >&2
-  exit 1
-fi
-
-conda activate "$ENV_NAME"
+source scripts/activate_env.sh
 
 export PYTHONHASHSEED=0
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
@@ -43,7 +34,31 @@ echo "Host: $(hostname)"
 echo "Workflow: $WORKFLOW"
 echo "Task: ${SLURM_ARRAY_TASK_ID:-unset}"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
-nvidia-smi || true
+echo "Python: $(command -v python)"
+python - <<'PY'
+import importlib.util
+import sys
+
+missing = [name for name in ("pandas", "torch") if importlib.util.find_spec(name) is None]
+if missing:
+    print(
+        "ERROR: Active Python environment is missing required packages: "
+        + ", ".join(missing),
+        file=sys.stderr,
+    )
+    print(
+        "Run this on a login node first: ENV_NAME=chau-2024-exact bash scripts/setup_env.sh",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+print(f"Python executable: {sys.executable}")
+PY
+
+if command -v nvidia-smi >/dev/null 2>&1; then
+  nvidia-smi
+else
+  echo "nvidia-smi not found; continuing without NVIDIA GPU diagnostics."
+fi
 
 case "$WORKFLOW" in
   fit)

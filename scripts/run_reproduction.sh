@@ -68,6 +68,145 @@ case "$MODE" in
       run_logged bash -lc "$cmd"
     done
     ;;
+  psi-space-ori-smoke)
+    run_logged python paper/response.py \
+      --mode space_ori \
+      --wee 1.5 1.5 \
+      --wei 3 3 \
+      --wie 3 3 \
+      --wii 5 5 \
+      --kee 0.15 0.15 \
+      --kei 0.5 0.3 \
+      --kie 0.4 0.15 \
+      --kii 0.5 0.5 \
+      --N-space "${PSI_N_SPACE_X:-8}" "${PSI_N_SPACE_Y:-8}" \
+      --N-ori "${PSI_N_ORI:-6}" \
+      --use-psi \
+      --seed "${SEED:-0}" \
+      --dh "${PSI_DH:-10000}" \
+      --out "${PSI_OUT:-paper/figures/psi_no_visual_field_smoke.pdf}"
+    ;;
+  psi-space-ori)
+    run_logged python paper/response.py \
+      --mode space_ori \
+      --wee 1.5 1.5 \
+      --wei 3 3 \
+      --wie 3 3 \
+      --wii 5 5 \
+      --kee 0.15 0.15 \
+      --kei 0.5 0.3 \
+      --kie 0.4 0.15 \
+      --kii 0.5 0.5 \
+      --N-space "${PSI_N_SPACE_X:-40}" "${PSI_N_SPACE_Y:-40}" \
+      --N-ori "${PSI_N_ORI:-12}" \
+      --use-psi \
+      --seed "${SEED:-0}" \
+      --max-neurons "${PSI_MAX_NEURONS:-40000}" \
+      --dh "${PSI_DH:-10000}" \
+      --out "${PSI_OUT:-paper/figures/psi_no_visual_field.pdf}"
+    ;;
+  psi-paper-response)
+    PSI_PAPER_OUT_DIR="${PSI_PAPER_OUT_DIR:-paper/figures/psi_no_visual_field}"
+    mkdir -p "$PSI_PAPER_OUT_DIR"
+    run_logged python paper/response.py \
+      --wee 3 \
+      --wei 4 \
+      --wie 4 \
+      --wii 5.25 \
+      --kee 0.5 \
+      --kei -0.25 \
+      --kie -0.25 \
+      --kii 0.25 \
+      --N-space "${PSI_PAPER_N_SPACE_X:-4}" "${PSI_PAPER_N_SPACE_Y:-4}" \
+      --N-ori "${PSI_PAPER_N_ORI:-12}" \
+      --N-osi "${PSI_PAPER_N_OSI:-7}" \
+      --mode eigvals \
+      --eps 1e-2 \
+      --use-psi \
+      --seed "${SEED:-0}" \
+      --max-neurons "${PSI_MAX_NEURONS:-6000}" \
+      --out "$PSI_PAPER_OUT_DIR/1c_psi.pdf"
+    run_logged python paper/response.py \
+      --wee 3 \
+      --wei 4 \
+      --wie 4 \
+      --wii 5.25 \
+      --kee 0.5 \
+      --kei -0.25 \
+      --kie -0.25 \
+      --kii 0.25 \
+      --N-space "${PSI_PAPER_N_SPACE_X:-4}" "${PSI_PAPER_N_SPACE_Y:-4}" \
+      --N-ori "${PSI_PAPER_N_ORI:-12}" \
+      --N-osi "${PSI_PAPER_N_OSI:-7}" \
+      --mode compare \
+      --kind space_ori \
+      --dh "${PSI_DH:-10000}" \
+      --use-psi \
+      --seed "${SEED:-0}" \
+      --max-neurons "${PSI_MAX_NEURONS:-6000}" \
+      --out "$PSI_PAPER_OUT_DIR/1d_a_psi.pdf"
+    run_logged python paper/response.py \
+      --wee 3 \
+      --wei 4 \
+      --wie 4 \
+      --wii 5.25 \
+      --kee 0.5 \
+      --kei -0.25 \
+      --kie -0.25 \
+      --kii 0.25 \
+      --N-space "${PSI_PAPER_N_SPACE_X:-4}" "${PSI_PAPER_N_SPACE_Y:-4}" \
+      --N-ori "${PSI_PAPER_N_ORI:-12}" \
+      --N-osi "${PSI_PAPER_N_OSI:-7}" \
+      --mode compare \
+      --kind ori_osi \
+      --dh "${PSI_DH:-10000}" \
+      --tau-i 1.0 \
+      --use-psi \
+      --seed "${SEED:-0}" \
+      --max-neurons "${PSI_MAX_NEURONS:-6000}" \
+      --out "$PSI_PAPER_OUT_DIR/1d_b_psi.pdf"
+    run_logged python paper/response.py \
+      --wee 1 \
+      --wei 4 \
+      --wie 4 \
+      --wii 0 \
+      --kee 0.5 0.5 \
+      --kei 0.25 0.5 \
+      --kie 0.25 0.5 \
+      --kii 0 0 \
+      --N-space "${PSI_PAPER_N_SPACE_X:-4}" "${PSI_PAPER_N_SPACE_Y:-4}" \
+      --N-ori "${PSI_PAPER_N_ORI:-12}" \
+      --N-osi "${PSI_PAPER_N_OSI:-7}" \
+      --mode ori \
+      --dh "${PSI_DH:-10000}" \
+      --use-psi \
+      --seed "${SEED:-0}" \
+      --max-neurons "${PSI_MAX_NEURONS:-6000}" \
+      --out "$PSI_PAPER_OUT_DIR/4a_psi.pdf"
+    run_logged python paper/response.py \
+      --wee 1.5 1.5 \
+      --wei 3 3 \
+      --wie 3 3 \
+      --wii 5 5 \
+      --kee 0.15 0.15 \
+      --kei 0.5 0.3 \
+      --kie 0.4 0.15 \
+      --kii 0.5 0.5 \
+      --N-space "${PSI_PAPER_N_SPACE_X:-4}" "${PSI_PAPER_N_SPACE_Y:-4}" \
+      --N-ori "${PSI_PAPER_N_ORI:-12}" \
+      --N-osi "${PSI_PAPER_N_OSI:-7}" \
+      --mode space_ori \
+      --dh "${PSI_DH:-10000}" \
+      --normalize \
+      --rlim 35 300 \
+      --use-psi \
+      --seed "${SEED:-0}" \
+      --max-neurons "${PSI_MAX_NEURONS:-6000}" \
+      --out "$PSI_PAPER_OUT_DIR/4c_psi.pdf"
+    ;;
+  psi-tests)
+    run_logged python -m pytest -q test/test_nn/test_modules/test_kernels.py -k "psi_tuning"
+    ;;
   model-plots)
     (
       cd paper/model_fits/no_disorder
@@ -110,7 +249,7 @@ for path in paths:
 PY
     ;;
   *)
-    echo "Usage: $0 {smoke|core|paper|model-plots|verify}" >&2
+    echo "Usage: $0 {smoke|core|paper|psi-space-ori-smoke|psi-space-ori|psi-paper-response|psi-tests|model-plots|verify}" >&2
     exit 2
     ;;
 esac

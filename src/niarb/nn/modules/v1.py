@@ -352,6 +352,10 @@ class V1(torch.nn.Module):
         f: float | Callable[[Tensor], Tensor] | str | Sequence = "Identity",
         space_x: tuple[float, float] = (1.0, torch.inf),
         kappa_x: float = 0.0,
+        use_psi: bool = False,
+        use_visual_field_tuning: bool = False,
+        psi: float | Tensor | None = None,
+        visual_field_map: torch.nn.Module | Sequence | None = None,
         sigma_symmetry: str | Sequence[Sequence[int]] | Tensor | None = None,
         null_connections: Iterable[Sequence[CellType]] | None = None,
         autapse: bool = False,
@@ -412,6 +416,20 @@ class V1(torch.nn.Module):
                 space_x is not default.
             kappa_x (optional): Multiply connectivity by 1 + 2 * kappa_x * cos(x["ori"]).
                 See above if space_x is also provided.
+            use_psi (optional):
+                If True, replace the orientation term cos(theta - phi) in Eq. 8 with
+                cos(psi - theta) * cos(psi - phi). Defaults to False, preserving the
+                original model.
+            use_visual_field_tuning (optional):
+                If True, compute psi from the angle between visual-field receptive-field
+                centers. If False and use_psi is True, treat psi as an independent
+                uniformly distributed random variable. Defaults to False.
+            psi (optional):
+                Optional fixed independent psi angle in the same units as x["ori"].
+                If None, independent psi values are sampled uniformly.
+            visual_field_map (optional):
+                Callable map from x["space"] to a 2D visual-field coordinate. Required
+                when use_visual_field_tuning is True.
             sigma_symmetry (optional): Symmetries in sigma. If a string, must be one of
                 {"pre", "post", "full"}. If tensor-like, must have shape (n, n)
                 consisting of consecutive integers starting from 0. If None, no symmetry
@@ -472,7 +490,8 @@ class V1(torch.nn.Module):
             W_std (optional): Standard deviation (as a fraction of the mean) of connection weight distribution.
             W_max (optional): Maximum absolute connection strength.
             seed (optional):
-                Random seed for generating connection weight matrix, only relevant if N_synapses is not None or W_std > 0.
+                Random seed for generating connection weight matrix, only relevant if
+                independent psi is sampled, N_synapses is not None, or W_std > 0.
             sparsify_kwargs (optional): keyword arguments passed to weights.sparsify.
             nonlinear_kwargs (optional): keyword arguments passed to numerics.perturbed_steady_state_approx.
             simulation_kwargs (optional): keyword arguments passed to numerics.perturbed_steady_state.
@@ -504,6 +523,29 @@ class V1(torch.nn.Module):
             raise NotImplementedError(
                 f"Currently only accepts float vf, but got {type(init_vf)=}."
             )
+
+        if not isinstance(use_psi, bool):
+            raise TypeError(f"use_psi must be bool, but got {type(use_psi)=}.")
+
+        if not isinstance(use_visual_field_tuning, bool):
+            raise TypeError(
+                "use_visual_field_tuning must be bool, but got "
+                f"{type(use_visual_field_tuning)=}."
+            )
+
+        if use_visual_field_tuning and not use_psi:
+            raise ValueError("use_visual_field_tuning requires use_psi=True.")
+
+        if use_psi and "ori" not in variables:
+            raise ValueError("use_psi requires 'ori' in variables.")
+
+        if use_visual_field_tuning and not {"space", "ori"}.issubset(variables):
+            raise ValueError(
+                "use_visual_field_tuning requires both 'space' and 'ori' in variables."
+            )
+
+        if use_visual_field_tuning and visual_field_map is None:
+            raise ValueError("visual_field_map is required when use_visual_field_tuning=True.")
 
         if mode not in {"analytical", "matrix", "matrix_approx", "numerical"}:
             raise ValueError(
@@ -572,6 +614,9 @@ class V1(torch.nn.Module):
         if not callable(f):
             f = utils.call(nn, f)
 
+        if use_visual_field_tuning and not callable(visual_field_map):
+            visual_field_map = utils.call("niarb.atlas", visual_field_map)
+
         if isinstance(f, nn.Match) and "cell_type" not in variables:
             raise ValueError("nn.Match nonlinearity requires 'cell_type' variable.")
 
@@ -626,6 +671,13 @@ class V1(torch.nn.Module):
         self.f = f
         self.space_x_ = space_x
         self.kappa_x_ = kappa_x
+        self.use_psi = use_psi
+        self.use_visual_field_tuning = use_visual_field_tuning
+        if psi is None:
+            self.psi = None
+        else:
+            self.register_buffer("psi", torch.as_tensor(psi), persistent=False)
+        self.visual_field_map = visual_field_map
         self.autapse = autapse
         self.mode = mode
         self.approx_order = approx_order
@@ -735,12 +787,21 @@ class V1(torch.nn.Module):
         if "osi" in variables:
             kappa_kernel = kappa_kernel * nn.RankOne(self.osi_func, x_keys="osi")
 
+        if self.use_psi and self.use_visual_field_tuning:
+            ori_kernel = nn.VisualFieldTuning(
+                kappa_kernel, self.visual_field_map, ["space", "ori"], normalize=True
+            )
+        elif self.use_psi:
+            ori_kernel = nn.PsiTuning(kappa_kernel, self.psi, "ori", normalize=True)
+        else:
+            ori_kernel = nn.Tuning(kappa_kernel, "ori", normalize=True)
+
         product_kernel = {
             "cell_type": (
                 nn.Matrix(self.W, "cell_type") if has_ct else nn.Scalar(self.W)
             ),
             "space": space_product_kernel,
-            "ori": nn.Tuning(kappa_kernel, "ori", normalize=True),
+            "ori": ori_kernel,
         }
         if (
             "space" in self.variables
@@ -1008,11 +1069,11 @@ class V1(torch.nn.Module):
         if (
             output == "response"
             and self.mode == "analytical"
-            and self.space_x != (1.0, torch.inf)
+            and (self.space_x != (1.0, torch.inf) or self.use_psi)
         ):
             raise ValueError(
-                "space_x cannot be specified when output == 'response' and mode == "
-                f"'analytical', but {self.space_x=}."
+                "space_x and use_psi cannot be specified when output == 'response' "
+                f"and mode == 'analytical', but {self.space_x=} and {self.use_psi=}."
             )
 
         if isinstance(to_dataframe, str) and to_dataframe not in {"tdfl", "pandas"}:
@@ -1045,9 +1106,9 @@ class V1(torch.nn.Module):
 
         if check_circulant:
             affine_vars = set()
-            if self.space_x == (1.0, torch.inf):
+            if self.space_x == (1.0, torch.inf) and not self.use_psi:
                 affine_vars.add("space")
-            if self.kappa_x == 0.0:
+            if self.kappa_x == 0.0 and not self.use_psi:
                 affine_vars.add("ori")
             cdim = _cdim(
                 x.data[self.variables], ndim, affine_vars, rtol=1.0e-2, atol=1.0e-8
@@ -1154,18 +1215,25 @@ class V1(torch.nn.Module):
                 dr = dr.reshape((*dr.shape[:-1], *x.shape[-ndim:]))
 
         else:
+            psi_seed = (
+                self.seed
+                if self.use_psi and not self.use_visual_field_tuning and self.psi is None
+                else None
+            )
             if self.dense or len(self.prob_kernel.funcs) == 0:
-                W = weights.discretize(
-                    self.product_kernel, x.data[keys], ndim=ndim, dim=cdim
-                )  # (*bshape, *, *shape, *shape)
+                with random.set_seed(psi_seed):
+                    W = weights.discretize(
+                        self.product_kernel, x.data[keys], ndim=ndim, dim=cdim
+                    )  # (*bshape, *, *shape, *shape)
             else:
                 # Note: this is non-differentiable.
                 prob = weights.discretize(
                     self.prob_kernel, x.data[keys], ndim=ndim, dim=cdim, mul_dV=False
                 )
-                W = weights.discretize(
-                    self.strength_kernel, x.data[keys], ndim=ndim, dim=cdim
-                )  # (*bshape, *, *shape, *shape)
+                with random.set_seed(psi_seed):
+                    W = weights.discretize(
+                        self.strength_kernel, x.data[keys], ndim=ndim, dim=cdim
+                    )  # (*bshape, *, *shape, *shape)
 
                 if isinstance(prob, CirculantTensor):
                     prob = prob.dense()

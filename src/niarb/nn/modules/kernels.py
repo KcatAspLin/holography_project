@@ -24,6 +24,8 @@ __all__ = [
     "Monotonic",
     "Piecewise",
     "Tuning",
+    "PsiTuning",
+    "VisualFieldTuning",
     "SpaceGain",
     "SpaceOriGain",
     "RankOne",
@@ -433,6 +435,77 @@ class Tuning(Kernel):
         out = 1 + 2 * kappa * torch.cos(theta.to_period(2 * torch.pi).norm(dim=-1))
         if self.normalize:
             out = out / theta.period
+        return out
+
+
+class PsiTuning(Kernel):
+    n = 1
+
+    def __init__(
+        self,
+        kappa: Function,
+        psi: float | Tensor | None = None,
+        *args,
+        normalize: bool = False,
+        **kwargs,
+    ):
+        super().__init__(*args, kernels=(kappa,), **kwargs)
+        if psi is None:
+            self.psi = None
+        else:
+            self.register_buffer("psi", torch.as_tensor(psi), persistent=False)
+        self.normalize = normalize
+
+    def kernel(self, x_ori: PeriodicTensor, y_ori: PeriodicTensor, kappa: Tensor) -> Tensor:
+        theta = x_ori.to_period(2 * torch.pi).tensor.squeeze(-1)
+        phi = y_ori.to_period(2 * torch.pi).tensor.squeeze(-1)
+        if self.psi is None:
+            shape = torch.broadcast_shapes(kappa.shape, theta.shape, phi.shape)
+            psi = torch.rand(shape, dtype=x_ori.dtype, device=x_ori.device)
+            psi = psi * 2 * torch.pi
+        else:
+            period = x_ori.period.to(dtype=x_ori.dtype, device=x_ori.device)
+            psi = self.psi.to(dtype=x_ori.dtype, device=x_ori.device)
+            psi = psi * (2 * torch.pi / period)
+        out = 1 + 2 * kappa * torch.cos(psi - theta) * torch.cos(psi - phi)
+        if self.normalize:
+            out = out / x_ori.period
+        return out
+
+
+class VisualFieldTuning(Kernel):
+    n = 2
+
+    def __init__(
+        self,
+        kappa: Function,
+        visual_field_map: torch.nn.Module,
+        *args,
+        normalize: bool = False,
+        **kwargs,
+    ):
+        super().__init__(*args, kernels=(kappa,), **kwargs)
+        self.visual_field_map = visual_field_map
+        self.normalize = normalize
+
+    def kernel(
+        self,
+        x_space: Tensor,
+        y_space: Tensor,
+        x_ori: PeriodicTensor,
+        y_ori: PeriodicTensor,
+        kappa: Tensor,
+    ) -> Tensor:
+        x_rf = self.visual_field_map(x_space)
+        y_rf = self.visual_field_map(y_space)
+        d_rf = y_rf - x_rf
+        psi = torch.atan2(d_rf[..., 1], d_rf[..., 0])
+
+        theta = x_ori.to_period(2 * torch.pi).tensor.squeeze(-1)
+        phi = y_ori.to_period(2 * torch.pi).tensor.squeeze(-1)
+        out = 1 + 2 * kappa * torch.cos(psi - theta) * torch.cos(psi - phi)
+        if self.normalize:
+            out = out / x_ori.period
         return out
 
 

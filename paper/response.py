@@ -10,6 +10,7 @@ import seaborn as sns
 
 from niarb import viz, nn, neurons
 from niarb.nn.modules.v1 import compute_osi_scale
+from niarb.tensors.circulant import CirculantTensor
 from mpl_config import set_rcParams, get_sizes, GREY, GRID_WIDTH
 
 
@@ -35,6 +36,18 @@ def forward(
         raise ValueError("N_space must be even.")
     if N_ori % 2 != 0:
         raise ValueError("N_ori must be even.")
+
+    N_total = 2 * math.prod(N_space) * (N_ori or 1) * (N_osi or 1)
+    if kwargs.get("use_psi") and mode in {"matrix", "matrix_approx", "numerical"}:
+        max_neurons = kwargs.pop("max_neurons", None)
+        if max_neurons is not None and N_total > max_neurons:
+            memory_gib = N_total**2 * 8 / 1024**3
+            raise MemoryError(
+                f"Psi mode with {mode=} requires a dense {N_total} x {N_total} "
+                f"matrix, at least {memory_gib:.1f} GiB for one float64 matrix. "
+                f"Reduce --N-space/--N-ori, increase --max-neurons, or run on a "
+                f"large-memory compute node."
+            )
 
     sigma = torch.as_tensor(sigma).reshape(2, 2)
     d = len(N_space)
@@ -89,7 +102,13 @@ def forward(
 
         if output == "weight":
             return model(x, ndim=x.ndim, output=output, to_dataframe=False)
-        return model(x, ndim=x.ndim, output=output, to_dataframe="pandas")
+
+        # Independent psi breaks the circulant structure used by the original
+        # space/orientation grid solver. The V1 module supports this case as a
+        # dense 1D neuron list, while the pandas output below preserves the
+        # coordinates needed by the existing plotting code.
+        response_ndim = 1 if kwargs.get("use_psi") else x.ndim
+        return model(x, ndim=response_ndim, output=output, to_dataframe="pandas")
 
 
 def plot_ori_response(
@@ -104,6 +123,8 @@ def plot_ori_response(
     cell_type="PYR",
     **kwargs,
 ):
+    reference_kind = "Matrix" if kwargs.get("use_psi") else "Theory"
+    reference_mode = "matrix" if kwargs.get("use_psi") else "analytical"
     dfs = {}
     for kappa in kappas:
         k = compute_osi_scale(torch.distributions.Uniform(0, 1), nn.Identity())
@@ -122,11 +143,11 @@ def plot_ori_response(
         query = f"cell_type == '{cell_type}' and dh == 0"
         dfs[(category, "Simulation")] = df.query(query).reset_index(drop=True)
 
-        df = forward(W, sigma, kappa, (), 50, N_osi, dh, "analytical", **kwargs)
+        df = forward(W, sigma, kappa, (), 50, N_osi, dh, reference_mode, **kwargs)
         df["dr"] = df["dr"] / math.prod(N_space) * (50 / N_ori)
         if N_osi:
             query += "and osi == 0.5"
-        dfs[(category, "Theory")] = df.query(query).reset_index(drop=True)
+        dfs[(category, reference_kind)] = df.query(query).reset_index(drop=True)
 
     df = pd.concat(dfs, names=["category", "kind"]).reset_index([0, 1])
 
@@ -149,7 +170,7 @@ def plot_ori_response(
         errorbar=None,
         palette=["#FF766A", "#88CBEC"],
         hue_order=["Same-favoring", "Opp.-favoring"],
-        style_order=["Theory", "Simulation"],
+        style_order=[reference_kind, "Simulation"],
         ax=ax,
     )
     ax.set_xticks([0, 45, 90])
@@ -172,6 +193,8 @@ def plot_space_response(
     cell_type="PYR",
     **kwargs,
 ):
+    reference_kind = "Matrix" if kwargs.get("use_psi") else "Theory"
+    reference_mode = "matrix" if kwargs.get("use_psi") else "analytical"
     if len(sigma) != 2:
         raise ValueError("sigma must be a tuple of length 2.")
 
@@ -204,9 +227,12 @@ def plot_space_response(
         query = f"cell_type == '{cell_type}' and dh == 0"
         dfs[(category, "Simulation")] = df.query(query).reset_index(drop=True)
 
-        df = forward(W, sigma, kappa, N_space, 0, 0, dh, "analytical", **kwargs)
+        reference_N_ori = N_ori if kwargs.get("use_psi") else 0
+        df = forward(
+            W, sigma, kappa, N_space, reference_N_ori, N_osi, dh, reference_mode, **kwargs
+        )
         df["dr"] = df["dr"] / ((N_ori or 1) * (N_osi or 1))
-        dfs[(category, "Theory")] = df.query(query).reset_index(drop=True)
+        dfs[(category, reference_kind)] = df.query(query).reset_index(drop=True)
 
     df = pd.concat(dfs, names=["category", "kind"]).reset_index([0, 1])
     df = df.query(f"distance >= {rlim[0]} and distance < {rlim[1]}")
@@ -214,7 +240,7 @@ def plot_space_response(
     if normalize:
         norm = np.zeros(len(df))
         for category, sf in df.groupby("category", observed=True):
-            norm[sf.index] = sf.query("kind == 'Theory'")["dr"].max()
+            norm[sf.index] = sf.query("kind == @reference_kind")["dr"].max()
         df["dr"] = df["dr"] / norm
 
     mapping = {
@@ -232,7 +258,7 @@ def plot_space_response(
         y="dr",
         hue="category",
         style="kind",
-        style_order=["Theory", "Simulation"],
+        style_order=[reference_kind, "Simulation"],
         errorbar=None,
         ax=ax,
     )
@@ -256,6 +282,8 @@ def plot_space_ori_response(
     cell_type="PYR",
     **kwargs,
 ):
+    reference_kind = "Matrix" if kwargs.get("use_psi") else "Theory"
+    reference_mode = "matrix" if kwargs.get("use_psi") else "analytical"
     if len(sigma) != 2:
         raise ValueError("sigma must be a tuple of length 2.")
 
@@ -289,8 +317,8 @@ def plot_space_ori_response(
         query = f"cell_type == '{cell_type}' and dh == 0 and (dori == 0 or dori == 90)"
         dfs[(category, "Simulation")] = df.query(query).reset_index(drop=True)
 
-        df = forward(W, sigma, kappa, N_space, N_ori, N_osi, dh, "analytical", **kwargs)
-        dfs[(category, "Theory")] = df.query(query).reset_index(drop=True)
+        df = forward(W, sigma, kappa, N_space, N_ori, N_osi, dh, reference_mode, **kwargs)
+        dfs[(category, reference_kind)] = df.query(query).reset_index(drop=True)
 
     df = pd.concat(dfs, names=["category", "kind"]).reset_index([0, 1])
     df = df.query(f"distance >= {rlim[0]} and distance < {rlim[1]}")
@@ -298,7 +326,7 @@ def plot_space_ori_response(
     if normalize:
         norm = np.zeros(len(df))
         for category, sf in df.groupby("category", observed=True):
-            norm[sf.index] = sf.query("kind == 'Theory'")["dr"].max()
+            norm[sf.index] = sf.query("kind == @reference_kind")["dr"].max()
         df["dr"] = df["dr"] / norm
 
     mapping = {
@@ -307,26 +335,41 @@ def plot_space_ori_response(
         "dori": "Δ pref. (°)",
         "category": "# transitions",
     }
-    relplot = viz.mapped(sns.relplot, mapping)
-
     figsize, _ = get_sizes(1, 1, 0.8, 1)
-    g = relplot(
-        df,
-        kind="line",
-        x="distance",
-        y="dr",
-        row="category",
-        hue="dori",
-        style="kind",
-        row_order=["0", "1"],
-        style_order=["Theory", "Simulation"],
-        errorbar=None,
-        height=figsize[1],
-        aspect=figsize[0] / figsize[1],
-        palette=["#AA2A6C", "#4A489C"],
+    row_order = [category for category in ["0", "1"] if category in set(df["category"])]
+    if not row_order:
+        row_order = sorted(df["category"].unique())
+    fig, axes = plt.subplots(
+        len(row_order),
+        1,
+        figsize=(figsize[0], figsize[1] * len(row_order)),
+        sharex=True,
+        squeeze=False,
     )
 
-    return g.figure
+    for i, category in enumerate(row_order):
+        ax = axes[i, 0]
+        sf = df.query("category == @category")
+        sns.lineplot(
+            sf,
+            x="distance",
+            y="dr",
+            hue="dori",
+            style="kind",
+            style_order=[reference_kind, "Simulation"],
+            errorbar=None,
+            palette=["#AA2A6C", "#4A489C"],
+            legend=(i == 0),
+            ax=ax,
+        )
+        ax.set_title(f"{mapping['category']}: {category}")
+        ax.set_xlabel(mapping["distance"] if i == len(row_order) - 1 else "")
+        ax.set_ylabel(mapping["dr"])
+        if i == 0 and ax.get_legend() is not None:
+            sns.move_legend(ax, "upper left", bbox_to_anchor=(1, 1))
+
+    fig.tight_layout()
+    return fig
 
 
 def plot_response_comparison(
@@ -345,9 +388,11 @@ def plot_response_comparison(
     if kind not in {"space_ori", "ori_osi"}:
         raise ValueError(f"kind must be 'space_ori' or 'ori_osi', but {kind=}.")
 
+    reference_kind = "Matrix" if kwargs.get("use_psi") else "Theory"
+    reference_mode = "matrix" if kwargs.get("use_psi") else "analytical"
     df = {}
-    df["Theory"] = forward(
-        W, sigma, kappa, N_space, N_ori, N_osi, dh, "analytical", **kwargs
+    df[reference_kind] = forward(
+        W, sigma, kappa, N_space, N_ori, N_osi, dh, reference_mode, **kwargs
     )
     df["Numerics"] = forward(
         W, sigma, kappa, N_space, N_ori, N_osi, dh, "numerical", **kwargs
@@ -411,6 +456,13 @@ def plot_eigvals(
         output="weight",
         **kwargs,
     )
+    if isinstance(W, CirculantTensor):
+        W = W.dense(keep_shape=False)
+    else:
+        ndim = 1 + len(N_space) + bool(N_ori) + bool(N_osi)
+        N = 2 * math.prod(N_space) * (N_ori or 1) * (N_osi or 1)
+        if W.shape[-2:] != (N, N):
+            W = W.reshape((*W.shape[:-2 * ndim], N, N))
     eigvals = torch.linalg.eigvals(W)
     # Exclude very small eigenvalues since there are millions of such eigenvalues
     # which makes Illustrator crash when importing the pdf of this figure
@@ -463,6 +515,20 @@ def main():
     parser.add_argument("--eps", type=float, default=1e-5)
     parser.add_argument("--rlim", type=float, nargs=2, default=(30, 300))
     parser.add_argument("--normalize", action="store_true")
+    parser.add_argument("--use-psi", action="store_true")
+    parser.add_argument("--use-visual-field-tuning", action="store_true")
+    parser.add_argument("--psi", type=float)
+    parser.add_argument("--visual-field-map", type=str)
+    parser.add_argument("--seed", type=int)
+    parser.add_argument(
+        "--max-neurons",
+        type=int,
+        default=6000,
+        help=(
+            "Safety limit for dense psi runs. Set higher only on a large-memory "
+            "compute node."
+        ),
+    )
     parser.add_argument("--dpi", type=int)
     parser.add_argument("--out", "-o", type=str)
     parser.add_argument("--show", action="store_true")
@@ -477,6 +543,32 @@ def main():
         for kappa in zip(args.kee, args.kei, args.kie, args.kii, strict=True)
     ]
 
+    if args.use_visual_field_tuning and not args.use_psi:
+        parser.error("--use-visual-field-tuning requires --use-psi")
+    if args.use_psi and args.N_ori <= 0:
+        parser.error("--use-psi requires --N-ori > 0")
+    if args.use_visual_field_tuning and not args.N_space:
+        parser.error("--use-visual-field-tuning requires --N-space")
+    if args.use_visual_field_tuning and not args.visual_field_map:
+        parser.error("--use-visual-field-tuning requires --visual-field-map")
+    if args.seed is not None:
+        torch.manual_seed(args.seed)
+
+    model_kwargs = {
+        "use_psi": args.use_psi,
+        "use_visual_field_tuning": args.use_visual_field_tuning,
+        "max_neurons": args.max_neurons,
+    }
+    if args.psi is not None:
+        model_kwargs["psi"] = args.psi
+    if args.seed is not None:
+        model_kwargs["seed"] = args.seed
+    if args.visual_field_map:
+        model_kwargs["visual_field_map"] = (
+            "AllenAffineVisualFieldMap",
+            {"path": args.visual_field_map},
+        )
+
     set_rcParams()
     if args.mode == "ori":
         fig = plot_ori_response(
@@ -490,6 +582,7 @@ def main():
             tau_i=args.tau_i,
             rtol=args.rtol,
             maxiter=args.maxiter,
+            **model_kwargs,
         )
     elif args.mode == "space":
         fig = plot_space_response(
@@ -504,6 +597,7 @@ def main():
             rtol=args.rtol,
             maxiter=args.maxiter,
             rlim=args.rlim,
+            **model_kwargs,
         )
     elif args.mode == "space_ori":
         fig = plot_space_ori_response(
@@ -519,6 +613,7 @@ def main():
             rtol=args.rtol,
             maxiter=args.maxiter,
             rlim=args.rlim,
+            **model_kwargs,
         )
     elif args.mode == "compare":
         fig = plot_response_comparison(
@@ -534,6 +629,7 @@ def main():
             maxiter=args.maxiter,
             rlim=args.rlim,
             approx_order=args.approx_order,
+            **model_kwargs,
         )
     else:
         fig = plot_eigvals(
@@ -544,6 +640,7 @@ def main():
             N_osi=args.N_osi,
             tau_i=args.tau_i,
             eps=args.eps,
+            **model_kwargs,
         )
 
     if args.out:

@@ -136,6 +136,7 @@ Choose a mode:
 MODE=smoke sbatch slurm/reproduce.sbatch
 MODE=core sbatch slurm/reproduce.sbatch
 MODE=paper sbatch slurm/reproduce.sbatch
+MODE=psi-space-ori-smoke sbatch slurm/reproduce.sbatch
 MODE=model-plots sbatch slurm/reproduce.sbatch
 MODE=verify sbatch slurm/reproduce.sbatch
 ```
@@ -149,9 +150,138 @@ sbatch --partition=gpu --gres=gpu:a40:1 slurm/reproduce.sbatch
 
 The code uses CUDA automatically when `torch.cuda.is_available()` is true.
 
+## Slurm: Updated Eq. 8 with Independent Psi
+
+The updated Eq. 8 is disabled by default. To run the same space-orientation
+response analysis with independent uniformly sampled `psi`, submit the psi mode.
+This does not use visual-field tuning.
+
+Small smoke test, appropriate for the default `reproduce.sbatch` resources:
+
+```bash
+MODE=psi-space-ori-smoke SEED=0 sbatch slurm/reproduce.sbatch
+```
+
+Expected output:
+
+```text
+paper/figures/psi_no_visual_field_smoke.pdf
+```
+
+Full `40 x 40` space grid and `12` orientations:
+
+```bash
+MODE=psi-space-ori \
+SEED=0 \
+PSI_MAX_NEURONS=40000 \
+sbatch --time=04:00:00 --cpus-per-task=8 --mem=256G slurm/reproduce.sbatch
+```
+
+Expected output:
+
+```text
+paper/figures/psi_no_visual_field.pdf
+```
+
+The full psi run forms dense matrices because independent random `psi` breaks
+the original circulant shortcut. If your cluster kills the job or reports out of
+memory, either request more memory or lower the grid:
+
+```bash
+MODE=psi-space-ori \
+SEED=0 \
+PSI_N_SPACE_X=16 \
+PSI_N_SPACE_Y=16 \
+PSI_N_ORI=8 \
+PSI_MAX_NEURONS=5000 \
+PSI_OUT=paper/figures/psi_no_visual_field_16x16x8.pdf \
+sbatch --mem=64G slurm/reproduce.sbatch
+```
+
+To test only the new kernel code after syncing the files to the cluster:
+
+```bash
+MODE=psi-tests sbatch --time=00:10:00 --mem=8G slurm/reproduce.sbatch
+```
+
+To generate psi versions of the paper response figures whose runnable path
+constructs the Eq. 8 weight matrix in `paper/response.py`, use:
+
+```bash
+MODE=psi-paper-response SEED=0 scripts/submit_reproduction.sh --mem=64G
+```
+
+The default psi paper-response mode uses a reduced `4 x 4` space grid,
+`12` orientations, and `7` OSI bins. This is intentionally smaller than the
+paper command because independent random `psi` destroys the circulant shortcut
+and requires dense matrices. Expected outputs:
+
+```text
+paper/figures/psi_no_visual_field/1c_psi.pdf
+paper/figures/psi_no_visual_field/1d_a_psi.pdf
+paper/figures/psi_no_visual_field/1d_b_psi.pdf
+paper/figures/psi_no_visual_field/4a_psi.pdf
+paper/figures/psi_no_visual_field/4c_psi.pdf
+```
+
+This mode does not create psi versions of contour-only or data-fit figures such
+as `1b`, `2a`, `2d`, `3a`, or `4b`; those scripts use fitted data or analytic
+contour formulae rather than the simulated pairwise Eq. 8 weight matrix. Run
+`MODE=paper` to generate those original paper figures alongside the psi outputs.
+
+To scale the psi paper-response figures up on a high-memory node:
+
+```bash
+MODE=psi-paper-response \
+SEED=0 \
+PSI_PAPER_N_SPACE_X=8 \
+PSI_PAPER_N_SPACE_Y=8 \
+PSI_PAPER_N_ORI=12 \
+PSI_PAPER_N_OSI=7 \
+PSI_MAX_NEURONS=12000 \
+scripts/submit_reproduction.sh --time=08:00:00 --cpus-per-task=8 --mem=256G
+```
+
+Do not add `--use-visual-field-tuning` or `--visual-field-map` for this mode;
+it uses independent uniformly sampled `psi`.
+
+If `squeue` shows `launch failed requeued held`, the job usually failed before
+Python started. First check the Slurm reason:
+
+```bash
+scontrol show job <jobid> | egrep 'JobState|Reason|StdOut|StdErr|WorkDir|Command'
+sacct -j <jobid> --format=JobID,JobName%24,State,ExitCode,Reason%40,NodeList%24
+```
+
+A common cause is that the `logs/` directory did not exist when Slurm tried to
+open `logs/%x-%j.out` and `logs/%x-%j.err`. The submit wrapper creates those
+directories before calling `sbatch`. To recover, cancel and resubmit with:
+
+```bash
+scancel <jobid>
+MODE=psi-paper-response SEED=0 scripts/submit_reproduction.sh --mem=64G
+```
+
+If the Slurm log says `mamba: error: argument command: invalid choice:
+'shell.bash'` or `ModuleNotFoundError: No module named 'pandas'`, the job did
+not enter the project environment. Re-run setup on the login node, then submit
+again:
+
+```bash
+ENV_NAME=chau-2024-exact bash scripts/setup_env.sh
+MODE=psi-space-ori-smoke SEED=0 sbatch slurm/reproduce.sbatch
+```
+
+The Slurm log should print a Python executable under the project environment,
+for example:
+
+```text
+Python: /nfs/nhome/live/$USER/.conda/envs/chau-2024-exact/bin/python
+```
+
 ## Slurm: Regenerate Model Runs with Arrays
 
-The upstream README reports A40 GPU commands. The added array script wraps the same workflows and keeps stdout/stderr in `logs/`.
+The added array script wraps the same workflows and keeps stdout/stderr in `logs/`.
 
 Regenerate no-disorder response runs:
 

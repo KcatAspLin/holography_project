@@ -1,0 +1,10 @@
+{
+  "source": "Example only. Replace with an affine V1-to-visual-field map derived from Allen atlas registration.",
+  "input_coordinate_system": "repo V1 space coordinates, usually micrometers",
+  "output_coordinate_system": "visual-field coordinates used to define psi",
+  "matrix": [
+    [1.0, 0.0],
+    [0.0, 1.0]
+  ],
+  "offset": [0.0, 0.0]
+}

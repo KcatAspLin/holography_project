@@ -3,7 +3,7 @@ from math import exp
 import torch
 import pytest
 
-from niarb import nn
+from niarb import atlas, nn
 from niarb.nn.modules import frame
 from niarb.tensors import periodic
 
@@ -176,6 +176,50 @@ def test_tuning(x, y):
     # Δ ori = [45, 90, 0, 45], cos(Δ ori) = [0, -1, 1, 0]
     # 2 * kappa = [1, 3, 4, 2]
     expected = torch.tensor([1.0, -2.0, 5.0, 1.0])
+    torch.testing.assert_close(out, expected)
+
+
+def test_visual_field_tuning(x, y):
+    kappa = torch.tensor([[1.0, 2.0], [3.0, 4.0]]) / 2
+    visual_map = atlas.AllenAffineVisualFieldMap(matrix=[[1.0], [0.0]])
+    kernel = nn.VisualFieldTuning(nn.Matrix(kappa, "cell_type"), visual_map, ["space", "ori"])
+    out = kernel(x, y)
+    # psi = 0 for all nonzero RF offsets under this 1D-to-2D map.
+    # theta = [-45, 0, 45, 90], phi = [0, 90, 45, -45] degrees.
+    psi = torch.zeros(4)
+    theta = torch.tensor([-45.0, 0.0, 45.0, 90.0]) / 90.0 * torch.pi
+    phi = torch.tensor([0.0, 90.0, 45.0, -45.0]) / 90.0 * torch.pi
+    expected = 1 + torch.tensor([1.0, 3.0, 4.0, 2.0]) * torch.cos(
+        psi - theta
+    ) * torch.cos(psi - phi)
+    torch.testing.assert_close(out, expected)
+
+
+def test_psi_tuning(x, y):
+    kappa = torch.tensor([[1.0, 2.0], [3.0, 4.0]]) / 2
+    kernel = nn.PsiTuning(nn.Matrix(kappa, "cell_type"), 0.0, "ori")
+    out = kernel(x, y)
+    psi = torch.zeros(4)
+    theta = torch.tensor([-45.0, 0.0, 45.0, 90.0]) / 90.0 * torch.pi
+    phi = torch.tensor([0.0, 90.0, 45.0, -45.0]) / 90.0 * torch.pi
+    expected = 1 + torch.tensor([1.0, 3.0, 4.0, 2.0]) * torch.cos(
+        psi - theta
+    ) * torch.cos(psi - phi)
+    torch.testing.assert_close(out, expected)
+
+
+def test_independent_psi_tuning(x, y):
+    kappa = torch.tensor([[1.0, 2.0], [3.0, 4.0]]) / 2
+    kernel = nn.PsiTuning(nn.Matrix(kappa, "cell_type"), None, "ori")
+    torch.manual_seed(0)
+    out = kernel(x, y)
+    torch.manual_seed(0)
+    psi = torch.rand(4) * 2 * torch.pi
+    theta = torch.tensor([-45.0, 0.0, 45.0, 90.0]) / 90.0 * torch.pi
+    phi = torch.tensor([0.0, 90.0, 45.0, -45.0]) / 90.0 * torch.pi
+    expected = 1 + torch.tensor([1.0, 3.0, 4.0, 2.0]) * torch.cos(
+        psi - theta
+    ) * torch.cos(psi - phi)
     torch.testing.assert_close(out, expected)
 
 

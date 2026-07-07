@@ -9,22 +9,20 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 if command -v mamba >/dev/null 2>&1; then
-  CONDA_EXE=mamba
+  CONDA_CREATE_EXE=mamba
 elif command -v conda >/dev/null 2>&1; then
-  CONDA_EXE=conda
+  CONDA_CREATE_EXE=conda
 else
   echo "ERROR: conda or mamba is required." >&2
   exit 1
 fi
 
-eval "$("$CONDA_EXE" shell.bash hook)"
-
-if ! conda env list | awk '{print $1}' | grep -qx "$ENV_NAME"; then
-  "$CONDA_EXE" create -y -n "$ENV_NAME" -c conda-forge \
+if [[ ! -x "$HOME/.conda/envs/$ENV_NAME/bin/python" ]]; then
+  "$CONDA_CREATE_EXE" create -y -n "$ENV_NAME" -c conda-forge \
     "python=${PYTHON_VERSION}" pip "setuptools>=64" wheel git curl unzip compilers make
 fi
 
-conda activate "$ENV_NAME"
+source scripts/activate_env.sh
 python -m pip install --upgrade pip
 
 case "$TORCH_BACKEND" in
