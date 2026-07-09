@@ -24,6 +24,14 @@ visual-field coordinate, then uses:
 psi = atan2(rf_pre_y - rf_post_y, rf_pre_x - rf_post_x)
 ```
 
+If `psi_mode = "direct_space"`, the model assumes direct mapping from visual
+field to V1, `x' = x`, and computes `psi` directly from the pairwise 2D cortical
+space offset:
+
+```text
+psi = atan2((x - y)_1, (x - y)_0)
+```
+
 If `use_visual_field_tuning = false`, `psi` is sampled as an independent uniform
 random angle. This is the default psi mode. You may optionally provide a fixed
 `psi` value in the same coordinate system as `ori` for debugging or controlled
@@ -32,8 +40,8 @@ comparisons.
 ## Files changed
 
 - `src/niarb/atlas.py`: affine V1-to-visual-field map loader.
-- `src/niarb/nn/modules/kernels.py`: new `VisualFieldTuning` kernel.
-- `src/niarb/nn/modules/v1.py`: optional `visual_field_map` argument on `nn.V1`.
+- `src/niarb/nn/modules/kernels.py`: new `VisualFieldTuning` and `DirectSpaceTuning` kernels.
+- `src/niarb/nn/modules/v1.py`: optional `psi_mode` and `visual_field_map` arguments on `nn.V1`.
 - `scripts/check_visual_field_tuning.py`: quick smoke-test script.
 - `scripts/fit_allen_visual_field_map.py`: fits the JSON map from point correspondences.
 - `examples/allen_visual_field_map.example.json`: example mapping file format.
@@ -117,6 +125,12 @@ python scripts/check_visual_field_tuning.py \
   --map examples/allen_visual_field_map.example.json
 ```
 
+Use psi computed directly from the 2D V1-space offset, assuming `x' = x`:
+
+```bash
+python scripts/check_visual_field_tuning.py --psi-mode direct_space
+```
+
 ## Using it in Python
 
 ```python
@@ -143,6 +157,20 @@ model = nn.V1(
     cell_types=["PYR", "PV"],
     use_psi=True,
     use_visual_field_tuning=False,
+    mode="matrix",
+)
+```
+
+To use direct-space psi with `x' = x`:
+
+```python
+from niarb import nn
+
+model = nn.V1(
+    ["cell_type", "space", "ori"],
+    cell_types=["PYR", "PV"],
+    use_psi=True,
+    psi_mode="direct_space",
     mode="matrix",
 )
 ```
@@ -179,6 +207,15 @@ use_visual_field_tuning = false
 Optionally add `psi = 45.0` for a fixed independent psi value instead of
 uniform random sampling.
 
+To use direct-space psi with `x' = x`:
+
+```toml
+[pipeline.model]
+mode = "matrix"
+use_psi = true
+psi_mode = "direct_space"
+```
+
 or use `mode = "numerical"` if you need nonlinear dynamics.
 
 ## Running `paper/response.py` with psi but not visual-field tuning
@@ -207,6 +244,54 @@ python paper/response.py \
 Do not pass `--use-visual-field-tuning` and do not pass `--visual-field-map`.
 With `--use-psi` alone, psi is independent and uniformly sampled.
 Passing `--seed` makes that independent psi sampling reproducible.
+
+Run the direct-space `x' = x` option and save under the reproducible experiment
+layout:
+
+```bash
+python paper/response.py \
+  --mode space_ori \
+  --wee 1.5 1.5 \
+  --wei 3 3 \
+  --wie 3 3 \
+  --wii 5 5 \
+  --kee 0.15 0.15 \
+  --kei 0.5 0.3 \
+  --kie 0.4 0.15 \
+  --kii 0.5 0.5 \
+  --N-space 4 4 \
+  --N-ori 4 \
+  --psi-mode direct_space \
+  --experiment-name direct_space_psi_smoke \
+  --seed 0 \
+  --dh 10000
+```
+
+This writes `results/direct_space_psi_smoke/seed_0/space_ori.pdf`.
+
+Run multiple seeds, keeping each output isolated:
+
+```bash
+python paper/response.py \
+  --mode space_ori \
+  --wee 1.5 1.5 \
+  --wei 3 3 \
+  --wie 3 3 \
+  --wii 5 5 \
+  --kee 0.15 0.15 \
+  --kei 0.5 0.3 \
+  --kie 0.4 0.15 \
+  --kii 0.5 0.5 \
+  --N-space 4 4 \
+  --N-ori 4 \
+  --psi-mode direct_space \
+  --experiment-name direct_space_psi_smoke \
+  --seeds 0 1 2 \
+  --dh 10000
+```
+
+This writes one figure per seed under
+`results/direct_space_psi_smoke/seed_<seed>/space_ori.pdf`.
 
 Psi runs are dense because a random independent `psi` breaks the old circulant
 space/orientation shortcut. For an interactive smoke test, use a smaller grid:

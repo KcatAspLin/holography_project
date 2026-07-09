@@ -1,6 +1,7 @@
 import argparse
 import sys
 import math
+from pathlib import Path
 
 import torch
 import pandas as pd
@@ -516,10 +517,17 @@ def main():
     parser.add_argument("--rlim", type=float, nargs=2, default=(30, 300))
     parser.add_argument("--normalize", action="store_true")
     parser.add_argument("--use-psi", action="store_true")
+    parser.add_argument(
+        "--psi-mode",
+        choices=["independent", "visual_field", "direct_space"],
+        default="independent",
+    )
     parser.add_argument("--use-visual-field-tuning", action="store_true")
     parser.add_argument("--psi", type=float)
     parser.add_argument("--visual-field-map", type=str)
     parser.add_argument("--seed", type=int)
+    parser.add_argument("--seeds", type=int, nargs="+")
+    parser.add_argument("--experiment-name", type=str)
     parser.add_argument(
         "--max-neurons",
         type=int,
@@ -543,96 +551,109 @@ def main():
         for kappa in zip(args.kee, args.kei, args.kie, args.kii, strict=True)
     ]
 
-    if args.use_visual_field_tuning and not args.use_psi:
-        parser.error("--use-visual-field-tuning requires --use-psi")
-    if args.use_psi and args.N_ori <= 0:
+    if args.use_visual_field_tuning:
+        if args.psi_mode != "independent":
+            parser.error("--use-visual-field-tuning cannot be combined with --psi-mode")
+        args.psi_mode = "visual_field"
+    use_psi = args.use_psi or args.psi_mode != "independent"
+    if use_psi and args.N_ori <= 0:
         parser.error("--use-psi requires --N-ori > 0")
-    if args.use_visual_field_tuning and not args.N_space:
-        parser.error("--use-visual-field-tuning requires --N-space")
-    if args.use_visual_field_tuning and not args.visual_field_map:
-        parser.error("--use-visual-field-tuning requires --visual-field-map")
-    if args.seed is not None:
-        torch.manual_seed(args.seed)
+    if args.psi_mode in {"visual_field", "direct_space"} and not args.N_space:
+        parser.error(f"--psi-mode {args.psi_mode} requires --N-space")
+    if args.psi_mode == "direct_space" and len(args.N_space) != 2:
+        parser.error("--psi-mode direct_space requires exactly two --N-space values")
+    if args.psi_mode == "visual_field" and not args.visual_field_map:
+        parser.error("--psi-mode visual_field requires --visual-field-map")
+    if args.psi_mode != "independent" and args.psi is not None:
+        parser.error("--psi can only be used with --psi-mode independent")
+    if args.seeds is not None and args.seed is not None:
+        parser.error("Use either --seed or --seeds, not both")
 
-    model_kwargs = {
-        "use_psi": args.use_psi,
-        "use_visual_field_tuning": args.use_visual_field_tuning,
+    model_kwargs_base = {
+        "use_psi": use_psi,
+        "psi_mode": args.psi_mode,
         "max_neurons": args.max_neurons,
     }
     if args.psi is not None:
-        model_kwargs["psi"] = args.psi
-    if args.seed is not None:
-        model_kwargs["seed"] = args.seed
+        model_kwargs_base["psi"] = args.psi
     if args.visual_field_map:
-        model_kwargs["visual_field_map"] = (
+        model_kwargs_base["visual_field_map"] = (
             "AllenAffineVisualFieldMap",
             {"path": args.visual_field_map},
         )
 
-    set_rcParams()
-    if args.mode == "ori":
-        fig = plot_ori_response(
-            Ws[0],
-            kappas,
-            N_space=args.N_space,
-            N_ori=args.N_ori,
-            N_osi=args.N_osi,
-            dh=args.dh,
-            scale=args.scale,
-            tau_i=args.tau_i,
-            rtol=args.rtol,
-            maxiter=args.maxiter,
-            **model_kwargs,
-        )
-    elif args.mode == "space":
-        fig = plot_space_response(
-            Ws,
-            N_space=args.N_space,
-            N_ori=args.N_ori,
-            N_osi=args.N_osi,
-            dh=args.dh,
-            scale=args.scale,
-            normalize=args.normalize,
-            tau_i=args.tau_i,
-            rtol=args.rtol,
-            maxiter=args.maxiter,
-            rlim=args.rlim,
-            **model_kwargs,
-        )
-    elif args.mode == "space_ori":
-        fig = plot_space_ori_response(
-            Ws,
-            kappas,
-            N_space=args.N_space,
-            N_ori=args.N_ori,
-            N_osi=args.N_osi,
-            dh=args.dh,
-            scale=args.scale,
-            normalize=args.normalize,
-            tau_i=args.tau_i,
-            rtol=args.rtol,
-            maxiter=args.maxiter,
-            rlim=args.rlim,
-            **model_kwargs,
-        )
-    elif args.mode == "compare":
-        fig = plot_response_comparison(
-            args.kind,
-            Ws[0],
-            kappas[0],
-            N_space=args.N_space,
-            N_ori=args.N_ori,
-            N_osi=args.N_osi,
-            dh=args.dh,
-            tau_i=args.tau_i,
-            rtol=args.rtol,
-            maxiter=args.maxiter,
-            rlim=args.rlim,
-            approx_order=args.approx_order,
-            **model_kwargs,
-        )
+    if args.seeds is not None:
+        seeds = args.seeds
+    elif args.seed is not None:
+        seeds = [args.seed]
+    elif args.experiment_name or args.psi_mode == "direct_space":
+        seeds = [0]
     else:
-        fig = plot_eigvals(
+        seeds = [None]
+
+    def make_fig(model_kwargs):
+        if args.mode == "ori":
+            return plot_ori_response(
+                Ws[0],
+                kappas,
+                N_space=args.N_space,
+                N_ori=args.N_ori,
+                N_osi=args.N_osi,
+                dh=args.dh,
+                scale=args.scale,
+                tau_i=args.tau_i,
+                rtol=args.rtol,
+                maxiter=args.maxiter,
+                **model_kwargs,
+            )
+        if args.mode == "space":
+            return plot_space_response(
+                Ws,
+                N_space=args.N_space,
+                N_ori=args.N_ori,
+                N_osi=args.N_osi,
+                dh=args.dh,
+                scale=args.scale,
+                normalize=args.normalize,
+                tau_i=args.tau_i,
+                rtol=args.rtol,
+                maxiter=args.maxiter,
+                rlim=args.rlim,
+                **model_kwargs,
+            )
+        if args.mode == "space_ori":
+            return plot_space_ori_response(
+                Ws,
+                kappas,
+                N_space=args.N_space,
+                N_ori=args.N_ori,
+                N_osi=args.N_osi,
+                dh=args.dh,
+                scale=args.scale,
+                normalize=args.normalize,
+                tau_i=args.tau_i,
+                rtol=args.rtol,
+                maxiter=args.maxiter,
+                rlim=args.rlim,
+                **model_kwargs,
+            )
+        if args.mode == "compare":
+            return plot_response_comparison(
+                args.kind,
+                Ws[0],
+                kappas[0],
+                N_space=args.N_space,
+                N_ori=args.N_ori,
+                N_osi=args.N_osi,
+                dh=args.dh,
+                tau_i=args.tau_i,
+                rtol=args.rtol,
+                maxiter=args.maxiter,
+                rlim=args.rlim,
+                approx_order=args.approx_order,
+                **model_kwargs,
+            )
+        return plot_eigvals(
             Ws[0],
             kappas[0],
             N_space=args.N_space,
@@ -643,17 +664,40 @@ def main():
             **model_kwargs,
         )
 
-    if args.out:
-        if args.dpi is None:
-            args.dpi = "figure"
-        fig.savefig(
-            args.out,
-            dpi=args.dpi,
-            bbox_inches="tight",
-            metadata={"Subject": " ".join(sys.argv)},
-        )
-    if args.show:
-        plt.show()
+    def output_path(seed):
+        experiment_name = args.experiment_name
+        if experiment_name is None and args.psi_mode == "direct_space":
+            experiment_name = "direct_space_psi"
+        if experiment_name is None:
+            return Path(args.out) if args.out else None
+
+        filename = Path(args.out).name if args.out else f"{args.mode}.pdf"
+        seed_label = 0 if seed is None else seed
+        out = Path("results") / experiment_name / f"seed_{seed_label}" / filename
+        out.parent.mkdir(parents=True, exist_ok=True)
+        return out
+
+    set_rcParams()
+    if args.dpi is None:
+        args.dpi = "figure"
+    for seed in seeds:
+        if seed is not None:
+            torch.manual_seed(seed)
+        model_kwargs = dict(model_kwargs_base)
+        if seed is not None:
+            model_kwargs["seed"] = seed
+        fig = make_fig(model_kwargs)
+        out = output_path(seed)
+        if out is not None:
+            fig.savefig(
+                out,
+                dpi=args.dpi,
+                bbox_inches="tight",
+                metadata={"Subject": " ".join(sys.argv)},
+            )
+        if args.show:
+            plt.show()
+        plt.close(fig)
 
 
 if __name__ == "__main__":

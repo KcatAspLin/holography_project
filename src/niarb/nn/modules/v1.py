@@ -353,6 +353,7 @@ class V1(torch.nn.Module):
         space_x: tuple[float, float] = (1.0, torch.inf),
         kappa_x: float = 0.0,
         use_psi: bool = False,
+        psi_mode: str = "independent",
         use_visual_field_tuning: bool = False,
         psi: float | Tensor | None = None,
         visual_field_map: torch.nn.Module | Sequence | None = None,
@@ -420,10 +421,16 @@ class V1(torch.nn.Module):
                 If True, replace the orientation term cos(theta - phi) in Eq. 8 with
                 cos(psi - theta) * cos(psi - phi). Defaults to False, preserving the
                 original model.
+            psi_mode (optional):
+                How to derive psi when use_psi is True. One of {"independent",
+                "visual_field", "direct_space"}. "independent" samples psi uniformly
+                unless a fixed psi value is provided. "visual_field" computes psi after
+                applying visual_field_map. "direct_space" assumes direct visual-field to
+                V1 mapping, x' = x, and computes psi = atan2((x - y)_1, (x - y)_0)
+                from 2D space coordinates. Defaults to "independent".
             use_visual_field_tuning (optional):
                 If True, compute psi from the angle between visual-field receptive-field
-                centers. If False and use_psi is True, treat psi as an independent
-                uniformly distributed random variable. Defaults to False.
+                centers. Legacy alias for psi_mode="visual_field". Defaults to False.
             psi (optional):
                 Optional fixed independent psi angle in the same units as x["ori"].
                 If None, independent psi values are sampled uniformly.
@@ -533,19 +540,39 @@ class V1(torch.nn.Module):
                 f"{type(use_visual_field_tuning)=}."
             )
 
-        if use_visual_field_tuning and not use_psi:
-            raise ValueError("use_visual_field_tuning requires use_psi=True.")
+        if psi_mode not in {"independent", "visual_field", "direct_space"}:
+            raise ValueError(
+                "psi_mode must be 'independent', 'visual_field', or 'direct_space', "
+                f"but got {psi_mode=}."
+            )
+
+        if use_visual_field_tuning:
+            if psi_mode != "independent":
+                raise ValueError(
+                    "use_visual_field_tuning is a legacy alias and cannot be combined "
+                    f"with explicit {psi_mode=}."
+                )
+            psi_mode = "visual_field"
+
+        if psi_mode != "independent" and not use_psi:
+            raise ValueError(f"psi_mode={psi_mode!r} requires use_psi=True.")
 
         if use_psi and "ori" not in variables:
             raise ValueError("use_psi requires 'ori' in variables.")
 
-        if use_visual_field_tuning and not {"space", "ori"}.issubset(variables):
+        if psi_mode in {"visual_field", "direct_space"} and not {
+            "space",
+            "ori",
+        }.issubset(variables):
             raise ValueError(
-                "use_visual_field_tuning requires both 'space' and 'ori' in variables."
+                f"psi_mode={psi_mode!r} requires both 'space' and 'ori' in variables."
             )
 
-        if use_visual_field_tuning and visual_field_map is None:
-            raise ValueError("visual_field_map is required when use_visual_field_tuning=True.")
+        if psi_mode == "visual_field" and visual_field_map is None:
+            raise ValueError("visual_field_map is required when psi_mode='visual_field'.")
+
+        if psi_mode != "independent" and psi is not None:
+            raise ValueError("fixed psi can only be used with psi_mode='independent'.")
 
         if mode not in {"analytical", "matrix", "matrix_approx", "numerical"}:
             raise ValueError(
@@ -614,7 +641,7 @@ class V1(torch.nn.Module):
         if not callable(f):
             f = utils.call(nn, f)
 
-        if use_visual_field_tuning and not callable(visual_field_map):
+        if psi_mode == "visual_field" and not callable(visual_field_map):
             visual_field_map = utils.call("niarb.atlas", visual_field_map)
 
         if isinstance(f, nn.Match) and "cell_type" not in variables:
@@ -672,7 +699,8 @@ class V1(torch.nn.Module):
         self.space_x_ = space_x
         self.kappa_x_ = kappa_x
         self.use_psi = use_psi
-        self.use_visual_field_tuning = use_visual_field_tuning
+        self.psi_mode = psi_mode
+        self.use_visual_field_tuning = psi_mode == "visual_field"
         if psi is None:
             self.psi = None
         else:
@@ -787,9 +815,13 @@ class V1(torch.nn.Module):
         if "osi" in variables:
             kappa_kernel = kappa_kernel * nn.RankOne(self.osi_func, x_keys="osi")
 
-        if self.use_psi and self.use_visual_field_tuning:
+        if self.use_psi and self.psi_mode == "visual_field":
             ori_kernel = nn.VisualFieldTuning(
                 kappa_kernel, self.visual_field_map, ["space", "ori"], normalize=True
+            )
+        elif self.use_psi and self.psi_mode == "direct_space":
+            ori_kernel = nn.DirectSpaceTuning(
+                kappa_kernel, ["space", "ori"], normalize=True
             )
         elif self.use_psi:
             ori_kernel = nn.PsiTuning(kappa_kernel, self.psi, "ori", normalize=True)
@@ -1217,7 +1249,7 @@ class V1(torch.nn.Module):
         else:
             psi_seed = (
                 self.seed
-                if self.use_psi and not self.use_visual_field_tuning and self.psi is None
+                if self.use_psi and self.psi_mode == "independent" and self.psi is None
                 else None
             )
             if self.dense or len(self.prob_kernel.funcs) == 0:

@@ -195,6 +195,48 @@ def test_visual_field_tuning(x, y):
     torch.testing.assert_close(out, expected)
 
 
+def test_direct_space_tuning():
+    x = frame.ParameterFrame(
+        {
+            "space": torch.tensor([[1.0, 0.0], [0.0, 1.0], [-1.0, 0.0], [0.0, -1.0]]),
+            "ori": periodic.tensor(
+                [[0.0], [45.0], [90.0], [-45.0]], extents=[(-90.0, 90.0)]
+            ),
+            "cell_type": torch.tensor([0, 1, 1, 0]),
+        }
+    )
+    y = frame.ParameterFrame(
+        {
+            "space": torch.zeros(4, 2),
+            "ori": periodic.tensor(
+                [[0.0], [0.0], [45.0], [90.0]], extents=[(-90.0, 90.0)]
+            ),
+            "cell_type": torch.tensor([0, 0, 1, 1]),
+        }
+    )
+    kappa = torch.tensor([[1.0, 2.0], [3.0, 4.0]]) / 2
+    kernel = nn.DirectSpaceTuning(nn.Matrix(kappa, "cell_type"), ["space", "ori"])
+    out = kernel(x, y)
+
+    psi = torch.atan2(
+        x["space"][..., 1] - y["space"][..., 1],
+        x["space"][..., 0] - y["space"][..., 0],
+    )
+    theta = x["ori"].to_period(2 * torch.pi).tensor.squeeze(-1)
+    phi = y["ori"].to_period(2 * torch.pi).tensor.squeeze(-1)
+    expected = 1 + torch.tensor([1.0, 3.0, 4.0, 2.0]) * torch.cos(
+        psi - theta
+    ) * torch.cos(psi - phi)
+    torch.testing.assert_close(out, expected)
+
+
+def test_direct_space_tuning_requires_2d_space(x, y):
+    kappa = torch.tensor([[1.0, 2.0], [3.0, 4.0]]) / 2
+    kernel = nn.DirectSpaceTuning(nn.Matrix(kappa, "cell_type"), ["space", "ori"])
+    with pytest.raises(ValueError, match="2D space"):
+        kernel(x, y)
+
+
 def test_psi_tuning(x, y):
     kappa = torch.tensor([[1.0, 2.0], [3.0, 4.0]]) / 2
     kernel = nn.PsiTuning(nn.Matrix(kappa, "cell_type"), 0.0, "ori")

@@ -509,6 +509,44 @@ class VisualFieldTuning(Kernel):
         return out
 
 
+class DirectSpaceTuning(Kernel):
+    n = 2
+
+    def __init__(
+        self,
+        kappa: Function,
+        *args,
+        normalize: bool = False,
+        **kwargs,
+    ):
+        super().__init__(*args, kernels=(kappa,), **kwargs)
+        self.normalize = normalize
+
+    def kernel(
+        self,
+        x_space: Tensor,
+        y_space: Tensor,
+        x_ori: PeriodicTensor,
+        y_ori: PeriodicTensor,
+        kappa: Tensor,
+    ) -> Tensor:
+        if x_space.shape[-1] != 2 or y_space.shape[-1] != 2:
+            raise ValueError(
+                "DirectSpaceTuning requires 2D space coordinates so psi can be "
+                f"computed with atan2, but got {x_space.shape[-1]=} and "
+                f"{y_space.shape[-1]=}."
+            )
+        d_space = x_space - y_space
+        psi = torch.atan2(d_space[..., 1], d_space[..., 0])
+
+        theta = x_ori.to_period(2 * torch.pi).tensor.squeeze(-1)
+        phi = y_ori.to_period(2 * torch.pi).tensor.squeeze(-1)
+        out = 1 + 2 * kappa * torch.cos(psi - theta) * torch.cos(psi - phi)
+        if self.normalize:
+            out = out / x_ori.period
+        return out
+
+
 class SpaceGain(Kernel):
     n = 1
 
