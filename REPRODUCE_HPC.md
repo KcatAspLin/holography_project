@@ -150,6 +150,47 @@ sbatch --partition=gpu --gres=gpu:a40:1 slurm/reproduce.sbatch
 
 The code uses CUDA automatically when `torch.cuda.is_available()` is true.
 
+## Slurm: Origin Perturbation Comparison
+
+To plot the response to a horizontal-preference neuron perturbed at the V1
+origin, comparing the paper model with the direct visual-field-to-V1 mapping:
+
+```bash
+sbatch --time=04:00:00 --cpus-per-task=8 --mem=128G slurm/origin_perturbation.sbatch
+```
+
+The default Slurm script runs:
+
+```bash
+python paper/plot_origin_perturbation_comparison.py \
+  --N-space 16 16 \
+  --N-ori 8 \
+  --fit-index 0 \
+  --experiment-name origin_horizontal_perturbation \
+  --seed 0 \
+  --max-neurons 50000
+```
+
+Expected output:
+
+```text
+results/origin_horizontal_perturbation/seed_0/origin_horizontal_response.pdf
+```
+
+You can override the grid, fit, experiment name, seed, or dense-matrix safety
+limit at submit time:
+
+```bash
+N_SPACE_X=24 \
+N_SPACE_Y=24 \
+N_ORI=8 \
+FIT_INDEX=0 \
+EXPERIMENT_NAME=origin_horizontal_perturbation_24x24x8 \
+SEED=0 \
+MAX_NEURONS=50000 \
+sbatch --time=08:00:00 --cpus-per-task=8 --mem=256G slurm/origin_perturbation.sbatch
+```
+
 ## Slurm: Updated Eq. 8 with Independent Psi
 
 The updated Eq. 8 is disabled by default. To run the same space-orientation

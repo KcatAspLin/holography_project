@@ -83,18 +83,31 @@ def response(model, x):
     return out["dr"].detach().cpu()
 
 
-def plot_responses(x, responses, cell_type, out, dpi):
+def masked_panels(responses, cell_idx, perturb_idx):
+    panels = {}
+    perturb_cell_idx, ix, iy, iori = perturb_idx
+    for name, dr in responses.items():
+        panel = dr[cell_idx].clone()
+        if cell_idx == perturb_cell_idx:
+            panel[ix, iy, iori] = torch.nan
+        panels[name] = panel
+    return panels
+
+
+def plot_responses(x, responses, cell_type, perturb_idx, out, dpi):
     space_x = x["space"][0, :, 0, 0, 0].detach().cpu()
     space_y = x["space"][0, 0, :, 0, 1].detach().cpu()
     ori = x["ori"][0, 0, 0, :].tensor.squeeze(-1).detach().cpu()
     cell_types = list(x["cell_type"].categories)
     cell_idx = cell_types.index(cell_type)
 
-    panels = [dr[cell_idx] for dr in responses.values()]
-    vmax = max(float(panel.abs().max()) for panel in panels)
+    panels = masked_panels(responses, cell_idx, perturb_idx)
+    vmax = max(float(torch.nan_to_num(panel.abs()).max()) for panel in panels.values())
     if vmax == 0.0:
         vmax = 1.0
     norm = colors.TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
+    cmap = plt.get_cmap("coolwarm").copy()
+    cmap.set_bad("white")
 
     nrows, ncols = len(responses), len(ori)
     fig, axes = plt.subplots(
@@ -114,14 +127,14 @@ def plot_responses(x, responses, cell_type, out, dpi):
         float(space_y.min()),
         float(space_y.max()),
     ]
-    for row, (model_name, dr) in enumerate(responses.items()):
+    for row, (model_name, panel) in enumerate(panels.items()):
         for col, theta in enumerate(ori):
             ax = axes[row, col]
             image = ax.imshow(
-                dr[cell_idx, :, :, col].T,
+                panel[:, :, col].T,
                 origin="lower",
                 extent=extent,
-                cmap="coolwarm",
+                cmap=cmap,
                 norm=norm,
                 interpolation="nearest",
                 aspect="equal",
@@ -157,7 +170,7 @@ def main():
     parser.add_argument("--cell-type", choices=["PYR", "PV"], default="PYR")
     parser.add_argument("--perturb-cell-type", choices=["PYR", "PV"], default="PYR")
     parser.add_argument("--dh", type=float, default=10000.0)
-    parser.add_argument("--max-neurons", type=int, default=6000)
+    parser.add_argument("--max-neurons", type=int, default=50000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--seeds", type=int, nargs="+")
     parser.add_argument("--experiment-name", default="origin_horizontal_perturbation")
@@ -188,13 +201,13 @@ def main():
     for seed in seeds:
         torch.manual_seed(seed)
         x = make_grid(args.N_space, args.N_ori, args.space_extent, ["PYR", "PV"])
-        perturb_origin_horizontal(x, args.perturb_cell_type, args.dh)
+        perturb_idx = perturb_origin_horizontal(x, args.perturb_cell_type, args.dh)
         responses = {
             "paper": response(make_model(state, "paper", seed=seed), x),
             "direct space": response(make_model(state, "direct_space", seed=seed), x),
         }
         out = Path("results") / args.experiment_name / f"seed_{seed}" / args.out.name
-        fig = plot_responses(x, responses, args.cell_type, out, args.dpi)
+        fig = plot_responses(x, responses, args.cell_type, perturb_idx, out, args.dpi)
         plt.close(fig)
         print(f"Saved {out} using fit {fit}.")
 
