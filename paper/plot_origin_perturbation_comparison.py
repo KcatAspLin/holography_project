@@ -60,10 +60,38 @@ def perturb_origin_horizontal(x, cell_type, dh):
     return cell_idx, ix, iy, iori
 
 
-def make_model(state, mode_name, seed=None):
+MODEL_VARIANTS = (
+    ("original paper", {}),
+    (
+        "direct\ncos(psi-theta) cos(psi-phi)",
+        {"use_psi": True, "psi_mode": "direct_space"},
+    ),
+    (
+        "random iid\ncos(psi-theta) cos(psi-phi)",
+        {"use_psi": True, "psi_mode": "independent"},
+    ),
+    (
+        "direct\ncos(phi-theta) cos(psi-phi)",
+        {
+            "use_psi": True,
+            "psi_mode": "direct_space",
+            "psi_formula": "presynaptic",
+        },
+    ),
+    (
+        "random iid\ncos(phi-theta) cos(psi-phi)",
+        {
+            "use_psi": True,
+            "psi_mode": "independent",
+            "psi_formula": "presynaptic",
+        },
+    ),
+)
+
+
+def make_model(state, model_kwargs, seed=None):
     kwargs = {}
-    if mode_name == "direct_space":
-        kwargs = {"use_psi": True, "psi_mode": "direct_space"}
+    kwargs.update(model_kwargs)
     model = nn.V1(
         ["cell_type", "space", "ori"],
         cell_types=["PYR", "PV"],
@@ -203,8 +231,8 @@ def main():
         x = make_grid(args.N_space, args.N_ori, args.space_extent, ["PYR", "PV"])
         perturb_idx = perturb_origin_horizontal(x, args.perturb_cell_type, args.dh)
         responses = {
-            "paper": response(make_model(state, "paper", seed=seed), x),
-            "direct space": response(make_model(state, "direct_space", seed=seed), x),
+            label: response(make_model(state, model_kwargs, seed=seed), x)
+            for label, model_kwargs in MODEL_VARIANTS
         }
         out = Path("results") / args.experiment_name / f"seed_{seed}" / args.out.name
         fig = plot_responses(x, responses, args.cell_type, perturb_idx, out, args.dpi)

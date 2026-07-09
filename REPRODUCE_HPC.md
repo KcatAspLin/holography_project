@@ -153,7 +153,7 @@ The code uses CUDA automatically when `torch.cuda.is_available()` is true.
 ## Slurm: Origin Perturbation Comparison
 
 To plot the response to a horizontal-preference neuron perturbed at the V1
-origin, comparing the paper model with the direct visual-field-to-V1 mapping:
+origin, comparing the paper model with four modified Eq. 8 variants:
 
 ```bash
 sbatch --time=04:00:00 --cpus-per-task=8 --mem=128G slurm/origin_perturbation.sbatch
@@ -176,6 +176,9 @@ Expected output:
 ```text
 results/origin_horizontal_perturbation/seed_0/origin_horizontal_response.pdf
 ```
+
+The figure has five rows: original paper, direct-space symmetric psi, random
+iid symmetric psi, direct-space presynaptic psi, and random iid presynaptic psi.
 
 You can override the grid, fit, experiment name, seed, or dense-matrix safety
 limit at submit time:

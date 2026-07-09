@@ -363,6 +363,18 @@ class TestV1:
         out = model(x, output="weight", ndim=1, to_dataframe=False)
         assert out.shape[-2:] == (8, 8)
 
+    def test_direct_space_presynaptic_psi_builds_weight_matrix(self):
+        model = nn.V1(
+            ["space", "ori"],
+            use_psi=True,
+            psi_mode="direct_space",
+            psi_formula="presynaptic",
+            mode="matrix",
+        )
+        x = neurons.as_grid(0, N_space=(2, 2), N_ori=2, space_extent=(2, 2))
+        out = model(x, output="weight", ndim=1, to_dataframe=False)
+        assert out.shape[-2:] == (8, 8)
+
     def test_direct_space_psi_requires_space(self):
         with pytest.raises(ValueError, match="requires both 'space' and 'ori'"):
             nn.V1(["ori"], use_psi=True, psi_mode="direct_space")

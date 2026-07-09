@@ -522,6 +522,11 @@ def main():
         choices=["independent", "visual_field", "direct_space"],
         default="independent",
     )
+    parser.add_argument(
+        "--psi-formula",
+        choices=["symmetric", "presynaptic"],
+        default="symmetric",
+    )
     parser.add_argument("--use-visual-field-tuning", action="store_true")
     parser.add_argument("--psi", type=float)
     parser.add_argument("--visual-field-map", type=str)
@@ -572,6 +577,7 @@ def main():
     model_kwargs_base = {
         "use_psi": use_psi,
         "psi_mode": args.psi_mode,
+        "psi_formula": args.psi_formula,
         "max_neurons": args.max_neurons,
     }
     if args.psi is not None:

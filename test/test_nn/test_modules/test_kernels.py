@@ -230,6 +230,43 @@ def test_direct_space_tuning():
     torch.testing.assert_close(out, expected)
 
 
+def test_direct_space_tuning_presynaptic_formula():
+    x = frame.ParameterFrame(
+        {
+            "space": torch.tensor([[1.0, 0.0], [0.0, 1.0], [-1.0, 0.0], [0.0, -1.0]]),
+            "ori": periodic.tensor(
+                [[0.0], [45.0], [90.0], [-45.0]], extents=[(-90.0, 90.0)]
+            ),
+            "cell_type": torch.tensor([0, 1, 1, 0]),
+        }
+    )
+    y = frame.ParameterFrame(
+        {
+            "space": torch.zeros(4, 2),
+            "ori": periodic.tensor(
+                [[0.0], [0.0], [45.0], [90.0]], extents=[(-90.0, 90.0)]
+            ),
+            "cell_type": torch.tensor([0, 0, 1, 1]),
+        }
+    )
+    kappa = torch.tensor([[1.0, 2.0], [3.0, 4.0]]) / 2
+    kernel = nn.DirectSpaceTuning(
+        nn.Matrix(kappa, "cell_type"), ["space", "ori"], formula="presynaptic"
+    )
+    out = kernel(x, y)
+
+    psi = torch.atan2(
+        x["space"][..., 1] - y["space"][..., 1],
+        x["space"][..., 0] - y["space"][..., 0],
+    )
+    theta = x["ori"].to_period(2 * torch.pi).tensor.squeeze(-1)
+    phi = y["ori"].to_period(2 * torch.pi).tensor.squeeze(-1)
+    expected = 1 + torch.tensor([1.0, 3.0, 4.0, 2.0]) * torch.cos(
+        phi - theta
+    ) * torch.cos(psi - phi)
+    torch.testing.assert_close(out, expected)
+
+
 def test_direct_space_tuning_is_exported():
     assert hasattr(nn, "DirectSpaceTuning")
 
@@ -250,6 +287,21 @@ def test_psi_tuning(x, y):
     phi = torch.tensor([0.0, 90.0, 45.0, -45.0]) / 90.0 * torch.pi
     expected = 1 + torch.tensor([1.0, 3.0, 4.0, 2.0]) * torch.cos(
         psi - theta
+    ) * torch.cos(psi - phi)
+    torch.testing.assert_close(out, expected)
+
+
+def test_psi_tuning_presynaptic_formula(x, y):
+    kappa = torch.tensor([[1.0, 2.0], [3.0, 4.0]]) / 2
+    kernel = nn.PsiTuning(
+        nn.Matrix(kappa, "cell_type"), 0.0, "ori", formula="presynaptic"
+    )
+    out = kernel(x, y)
+    psi = torch.zeros(4)
+    theta = torch.tensor([-45.0, 0.0, 45.0, 90.0]) / 90.0 * torch.pi
+    phi = torch.tensor([0.0, 90.0, 45.0, -45.0]) / 90.0 * torch.pi
+    expected = 1 + torch.tensor([1.0, 3.0, 4.0, 2.0]) * torch.cos(
+        phi - theta
     ) * torch.cos(psi - phi)
     torch.testing.assert_close(out, expected)
 

@@ -18,6 +18,11 @@ def main():
         choices=["independent", "visual_field", "direct_space"],
         default="independent",
     )
+    parser.add_argument(
+        "--psi-formula",
+        choices=["symmetric", "presynaptic"],
+        default="symmetric",
+    )
     parser.add_argument("--use-visual-field-tuning", action="store_true")
     parser.add_argument("--psi", type=float)
     parser.add_argument("--seed", type=int)
@@ -40,11 +45,20 @@ def main():
             if args.map
             else atlas.IdentityVisualFieldMap()
         )
-        kernel = nn.VisualFieldTuning(nn.Scalar(0.5), visual_map, ["space", "ori"])
+        kernel = nn.VisualFieldTuning(
+            nn.Scalar(0.5),
+            visual_map,
+            ["space", "ori"],
+            formula=args.psi_formula,
+        )
     elif args.psi_mode == "direct_space":
-        kernel = nn.DirectSpaceTuning(nn.Scalar(0.5), ["space", "ori"])
+        kernel = nn.DirectSpaceTuning(
+            nn.Scalar(0.5), ["space", "ori"], formula=args.psi_formula
+        )
     elif use_psi:
-        kernel = nn.PsiTuning(nn.Scalar(0.5), args.psi, "ori")
+        kernel = nn.PsiTuning(
+            nn.Scalar(0.5), args.psi, "ori", formula=args.psi_formula
+        )
     else:
         kernel = nn.Tuning(nn.Scalar(0.5), "ori")
 

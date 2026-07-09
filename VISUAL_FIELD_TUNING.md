@@ -9,10 +9,18 @@ Original Eq. 8 orientation factor:
 1 + 2 kappa_ab cos(theta - phi)
 ```
 
-New optional factor, enabled only with `use_psi = true`:
+Default optional psi factor, enabled only with `use_psi = true` and
+`psi_formula = "symmetric"`:
 
 ```text
 1 + 2 kappa_ab cos(psi - theta) cos(psi - phi)
+```
+
+Alternative optional psi factor, enabled with `use_psi = true` and
+`psi_formula = "presynaptic"`:
+
+```text
+1 + 2 kappa_ab cos(phi - theta) cos(psi - phi)
 ```
 
 If `use_visual_field_tuning = true`, `psi` is computed pairwise from the vector
@@ -41,7 +49,7 @@ comparisons.
 
 - `src/niarb/atlas.py`: affine V1-to-visual-field map loader.
 - `src/niarb/nn/modules/kernels.py`: new `VisualFieldTuning` and `DirectSpaceTuning` kernels.
-- `src/niarb/nn/modules/v1.py`: optional `psi_mode` and `visual_field_map` arguments on `nn.V1`.
+- `src/niarb/nn/modules/v1.py`: optional `psi_mode`, `psi_formula`, and `visual_field_map` arguments on `nn.V1`.
 - `scripts/check_visual_field_tuning.py`: quick smoke-test script.
 - `scripts/fit_allen_visual_field_map.py`: fits the JSON map from point correspondences.
 - `examples/allen_visual_field_map.example.json`: example mapping file format.
@@ -131,6 +139,14 @@ Use psi computed directly from the 2D V1-space offset, assuming `x' = x`:
 python scripts/check_visual_field_tuning.py --psi-mode direct_space
 ```
 
+Use the alternative presynaptic-orientation factor:
+
+```bash
+python scripts/check_visual_field_tuning.py \
+  --psi-mode direct_space \
+  --psi-formula presynaptic
+```
+
 ## Using it in Python
 
 ```python
@@ -175,6 +191,12 @@ model = nn.V1(
 )
 ```
 
+To use the alternative presynaptic-orientation factor, add:
+
+```python
+psi_formula="presynaptic"
+```
+
 Use `mode="matrix"`, `mode="matrix_approx"`, or `mode="numerical"` for response
 simulations. The original `mode="analytical"` response derivation assumes the
 old separable `cos(theta - phi)` orientation term and is not valid for this
@@ -214,6 +236,12 @@ To use direct-space psi with `x' = x`:
 mode = "matrix"
 use_psi = true
 psi_mode = "direct_space"
+```
+
+To use the alternative presynaptic-orientation factor, add:
+
+```toml
+psi_formula = "presynaptic"
 ```
 
 or use `mode = "numerical"` if you need nonlinear dynamics.

@@ -447,14 +447,21 @@ class PsiTuning(Kernel):
         kappa: Function,
         psi: float | Tensor | None = None,
         *args,
+        formula: str = "symmetric",
         normalize: bool = False,
         **kwargs,
     ):
+        if formula not in {"symmetric", "presynaptic"}:
+            raise ValueError(
+                "formula must be 'symmetric' or 'presynaptic', "
+                f"but got {formula=}."
+            )
         super().__init__(*args, kernels=(kappa,), **kwargs)
         if psi is None:
             self.psi = None
         else:
             self.register_buffer("psi", torch.as_tensor(psi), persistent=False)
+        self.formula = formula
         self.normalize = normalize
 
     def kernel(self, x_ori: PeriodicTensor, y_ori: PeriodicTensor, kappa: Tensor) -> Tensor:
@@ -468,7 +475,10 @@ class PsiTuning(Kernel):
             period = x_ori.period.to(dtype=x_ori.dtype, device=x_ori.device)
             psi = self.psi.to(dtype=x_ori.dtype, device=x_ori.device)
             psi = psi * (2 * torch.pi / period)
-        out = 1 + 2 * kappa * torch.cos(psi - theta) * torch.cos(psi - phi)
+        if self.formula == "symmetric":
+            out = 1 + 2 * kappa * torch.cos(psi - theta) * torch.cos(psi - phi)
+        else:
+            out = 1 + 2 * kappa * torch.cos(phi - theta) * torch.cos(psi - phi)
         if self.normalize:
             out = out / x_ori.period
         return out
@@ -482,11 +492,18 @@ class VisualFieldTuning(Kernel):
         kappa: Function,
         visual_field_map: torch.nn.Module,
         *args,
+        formula: str = "symmetric",
         normalize: bool = False,
         **kwargs,
     ):
+        if formula not in {"symmetric", "presynaptic"}:
+            raise ValueError(
+                "formula must be 'symmetric' or 'presynaptic', "
+                f"but got {formula=}."
+            )
         super().__init__(*args, kernels=(kappa,), **kwargs)
         self.visual_field_map = visual_field_map
+        self.formula = formula
         self.normalize = normalize
 
     def kernel(
@@ -504,7 +521,10 @@ class VisualFieldTuning(Kernel):
 
         theta = x_ori.to_period(2 * torch.pi).tensor.squeeze(-1)
         phi = y_ori.to_period(2 * torch.pi).tensor.squeeze(-1)
-        out = 1 + 2 * kappa * torch.cos(psi - theta) * torch.cos(psi - phi)
+        if self.formula == "symmetric":
+            out = 1 + 2 * kappa * torch.cos(psi - theta) * torch.cos(psi - phi)
+        else:
+            out = 1 + 2 * kappa * torch.cos(phi - theta) * torch.cos(psi - phi)
         if self.normalize:
             out = out / x_ori.period
         return out
@@ -517,10 +537,17 @@ class DirectSpaceTuning(Kernel):
         self,
         kappa: Function,
         *args,
+        formula: str = "symmetric",
         normalize: bool = False,
         **kwargs,
     ):
+        if formula not in {"symmetric", "presynaptic"}:
+            raise ValueError(
+                "formula must be 'symmetric' or 'presynaptic', "
+                f"but got {formula=}."
+            )
         super().__init__(*args, kernels=(kappa,), **kwargs)
+        self.formula = formula
         self.normalize = normalize
 
     def kernel(
@@ -542,7 +569,10 @@ class DirectSpaceTuning(Kernel):
 
         theta = x_ori.to_period(2 * torch.pi).tensor.squeeze(-1)
         phi = y_ori.to_period(2 * torch.pi).tensor.squeeze(-1)
-        out = 1 + 2 * kappa * torch.cos(psi - theta) * torch.cos(psi - phi)
+        if self.formula == "symmetric":
+            out = 1 + 2 * kappa * torch.cos(psi - theta) * torch.cos(psi - phi)
+        else:
+            out = 1 + 2 * kappa * torch.cos(phi - theta) * torch.cos(psi - phi)
         if self.normalize:
             out = out / x_ori.period
         return out

@@ -354,6 +354,7 @@ class V1(torch.nn.Module):
         kappa_x: float = 0.0,
         use_psi: bool = False,
         psi_mode: str = "independent",
+        psi_formula: str = "symmetric",
         use_visual_field_tuning: bool = False,
         psi: float | Tensor | None = None,
         visual_field_map: torch.nn.Module | Sequence | None = None,
@@ -428,6 +429,10 @@ class V1(torch.nn.Module):
                 applying visual_field_map. "direct_space" assumes direct visual-field to
                 V1 mapping, x' = x, and computes psi = atan2((x - y)_1, (x - y)_0)
                 from 2D space coordinates. Defaults to "independent".
+            psi_formula (optional):
+                Which psi-dependent orientation factor to use when use_psi is True.
+                "symmetric" uses cos(psi - theta) * cos(psi - phi). "presynaptic"
+                uses cos(phi - theta) * cos(psi - phi). Defaults to "symmetric".
             use_visual_field_tuning (optional):
                 If True, compute psi from the angle between visual-field receptive-field
                 centers. Legacy alias for psi_mode="visual_field". Defaults to False.
@@ -544,6 +549,12 @@ class V1(torch.nn.Module):
             raise ValueError(
                 "psi_mode must be 'independent', 'visual_field', or 'direct_space', "
                 f"but got {psi_mode=}."
+            )
+
+        if psi_formula not in {"symmetric", "presynaptic"}:
+            raise ValueError(
+                "psi_formula must be 'symmetric' or 'presynaptic', "
+                f"but got {psi_formula=}."
             )
 
         if use_visual_field_tuning:
@@ -700,6 +711,7 @@ class V1(torch.nn.Module):
         self.kappa_x_ = kappa_x
         self.use_psi = use_psi
         self.psi_mode = psi_mode
+        self.psi_formula = psi_formula
         self.use_visual_field_tuning = psi_mode == "visual_field"
         if psi is None:
             self.psi = None
@@ -817,14 +829,27 @@ class V1(torch.nn.Module):
 
         if self.use_psi and self.psi_mode == "visual_field":
             ori_kernel = nn.VisualFieldTuning(
-                kappa_kernel, self.visual_field_map, ["space", "ori"], normalize=True
+                kappa_kernel,
+                self.visual_field_map,
+                ["space", "ori"],
+                formula=self.psi_formula,
+                normalize=True,
             )
         elif self.use_psi and self.psi_mode == "direct_space":
             ori_kernel = nn.DirectSpaceTuning(
-                kappa_kernel, ["space", "ori"], normalize=True
+                kappa_kernel,
+                ["space", "ori"],
+                formula=self.psi_formula,
+                normalize=True,
             )
         elif self.use_psi:
-            ori_kernel = nn.PsiTuning(kappa_kernel, self.psi, "ori", normalize=True)
+            ori_kernel = nn.PsiTuning(
+                kappa_kernel,
+                self.psi,
+                "ori",
+                formula=self.psi_formula,
+                normalize=True,
+            )
         else:
             ori_kernel = nn.Tuning(kappa_kernel, "ori", normalize=True)
 
