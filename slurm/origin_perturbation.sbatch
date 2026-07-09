@@ -9,13 +9,13 @@
 set -euo pipefail
 
 ENV_NAME="${ENV_NAME:-chau-2024-exact}"
-N_SPACE_X="${N_SPACE_X:-16}"
-N_SPACE_Y="${N_SPACE_Y:-16}"
+N_SPACE_X="${N_SPACE_X:-32}"
+N_SPACE_Y="${N_SPACE_Y:-32}"
 N_ORI="${N_ORI:-8}"
 FIT_INDEX="${FIT_INDEX:-0}"
 EXPERIMENT_NAME="${EXPERIMENT_NAME:-origin_horizontal_perturbation}"
 SEED="${SEED:-0}"
-MAX_NEURONS="${MAX_NEURONS:-50000}"
+MAX_NEURONS="${MAX_NEURONS:-60000}"
 
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
 mkdir -p logs

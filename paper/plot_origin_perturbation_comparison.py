@@ -166,7 +166,7 @@ def main():
     parser.add_argument("--fit-index", type=int, default=0)
     parser.add_argument("--N-space", type=int, nargs=2, default=(16, 16))
     parser.add_argument("--N-ori", type=int, default=6)
-    parser.add_argument("--space-extent", type=float, default=900.0)
+    parser.add_argument("--space-extent", type=float, default=200.0)
     parser.add_argument("--cell-type", choices=["PYR", "PV"], default="PYR")
     parser.add_argument("--perturb-cell-type", choices=["PYR", "PV"], default="PYR")
     parser.add_argument("--dh", type=float, default=10000.0)
