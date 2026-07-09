@@ -152,8 +152,9 @@ The code uses CUDA automatically when `torch.cuda.is_available()` is true.
 
 ## Slurm: Origin Perturbation Comparison
 
-To plot the response to a horizontal-preference neuron perturbed at the V1
-origin, comparing the paper model with four modified Eq. 8 variants:
+To plot PYR and PV responses to horizontal-preference perturbations of PYR and
+PV neurons at the V1 origin, comparing the paper model with four modified Eq. 8
+variants:
 
 ```bash
 sbatch --time=04:00:00 --cpus-per-task=8 --mem=128G slurm/origin_perturbation.sbatch
@@ -162,7 +163,7 @@ sbatch --time=04:00:00 --cpus-per-task=8 --mem=128G slurm/origin_perturbation.sb
 The default Slurm script runs:
 
 ```bash
-python paper/plot_origin_perturbation_comparison.py \
+python paper/plot_origin_perturbation_celltype_comparison.py \
   --N-space 16 16 \
   --N-ori 8 \
   --fit-index 0 \
@@ -174,10 +175,13 @@ python paper/plot_origin_perturbation_comparison.py \
 Expected output:
 
 ```text
-results/origin_horizontal_perturbation/seed_0/origin_horizontal_response.pdf
+results/origin_horizontal_perturbation/seed_0/perturb_PYR_response_PYR.pdf
+results/origin_horizontal_perturbation/seed_0/perturb_PYR_response_PV.pdf
+results/origin_horizontal_perturbation/seed_0/perturb_PV_response_PYR.pdf
+results/origin_horizontal_perturbation/seed_0/perturb_PV_response_PV.pdf
 ```
 
-The figure has five rows: original paper, direct-space symmetric psi, random
+Each figure has five rows: original paper, direct-space symmetric psi, random
 iid symmetric psi, direct-space presynaptic psi, and random iid presynaptic psi.
 
 You can override the grid, fit, experiment name, seed, or dense-matrix safety

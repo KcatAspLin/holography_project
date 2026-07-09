@@ -79,7 +79,7 @@ else
   echo "nvidia-smi not found; continuing without NVIDIA GPU diagnostics."
 fi
 
-python paper/plot_origin_perturbation_comparison.py \
+python paper/plot_origin_perturbation_celltype_comparison.py \
   --N-space "$N_SPACE_X" "$N_SPACE_Y" \
   --N-ori "$N_ORI" \
   --fit-index "$FIT_INDEX" \
