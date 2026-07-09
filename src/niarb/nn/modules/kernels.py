@@ -26,6 +26,7 @@ __all__ = [
     "Tuning",
     "PsiTuning",
     "VisualFieldTuning",
+    "DirectSpaceTuning",
     "SpaceGain",
     "SpaceOriGain",
     "RankOne",

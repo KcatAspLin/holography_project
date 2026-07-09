@@ -230,6 +230,10 @@ def test_direct_space_tuning():
     torch.testing.assert_close(out, expected)
 
 
+def test_direct_space_tuning_is_exported():
+    assert hasattr(nn, "DirectSpaceTuning")
+
+
 def test_direct_space_tuning_requires_2d_space(x, y):
     kappa = torch.tensor([[1.0, 2.0], [3.0, 4.0]]) / 2
     kernel = nn.DirectSpaceTuning(nn.Matrix(kappa, "cell_type"), ["space", "ori"])
