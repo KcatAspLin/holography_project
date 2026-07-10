@@ -156,8 +156,8 @@ def plot_scatter_profile(
         n_scatter_rows + 1,
         1,
         figsize=(5.8, 1.45 * (n_scatter_rows + 1)),
-        sharex=True,
-        sharey=True,
+        sharex=False,
+        sharey=False,
         constrained_layout=True,
         squeeze=False,
     )
@@ -177,8 +177,6 @@ def plot_scatter_profile(
         line_x, mean_y = mean_profile_line(xs, ys)
         mean_ax.plot(line_x, mean_y, linewidth=1.2, label=model_name, color=color)
     mean_ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
-    mean_ax.set_xlim(*xlim)
-    mean_ax.set_ylim(*ylim)
     mean_ax.set_ylabel(f"mean\n{response_cell_type}")
     mean_ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
 
