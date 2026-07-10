@@ -192,9 +192,10 @@ results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPON
 The distance and preferred-orientation profile figures use five vertically
 aligned scatter subplots plus a sixth mean-response subplot, with shared axis
 limits only for the scatter subplots and a tighter response range for the mean
-subplot. The psi profile figure uses five distance-conditioned subplots; each
+subplot. The psi profile figure uses four distance rows and two preferred
+orientation columns, with 0 deg on the left and -90 deg on the right; each
 subplot overlays all five models and shows the mean response over psi with a
-shaded min-to-max range for the selected distance.
+shaded min-to-max range for the selected distance and orientation.
 
 To run the same perturbation comparison on a polar spatial grid, use:
 

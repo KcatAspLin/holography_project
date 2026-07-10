@@ -217,7 +217,7 @@ def value_mask(values, target):
     return (values - target).abs() <= tol
 
 
-def selected_distance_values(distance, origin_mask, count=5):
+def selected_distance_values(distance, origin_mask, count=4):
     distances = torch.unique(distance[~origin_mask]).sort().values
     if distances.numel() <= count:
         return distances
@@ -234,13 +234,21 @@ def selected_distance_values(distance, origin_mask, count=5):
     return torch.stack(selected)
 
 
-def psi_summary_at_distance(panel, distance, psi, d):
+def orientation_values(x):
+    return x["ori"][0, 0, :].tensor.squeeze(-1).detach().cpu()
+
+
+def nearest_orientation_index(ori, target):
+    return int(torch.as_tensor(angle_diff_deg(ori.numpy(), target)).abs().argmin())
+
+
+def psi_summary_at_distance_orientation(panel, distance, psi, ori_idx, d):
     spatial_mask = value_mask(distance, d)
     psi_values = torch.unique(psi[spatial_mask]).sort().values
     x, y_mean, y_min, y_max = [], [], [], []
     for psi_value in psi_values:
         mask = spatial_mask & value_mask(psi, psi_value)
-        selected = panel[mask, :].reshape(-1)
+        selected = panel[mask, ori_idx].reshape(-1)
         selected = selected[torch.isfinite(selected)]
         if selected.numel() == 0:
             continue
@@ -262,20 +270,36 @@ def plot_psi_distance_profiles(
     _, _, _, origin_mask = grid_metadata(x, perturb_idx)
     cell_types = list(x["cell_type"].categories)
     cell_idx = cell_types.index(response_cell_type)
-    distances = selected_distance_values(distance, origin_mask, count=5)
+    distances = selected_distance_values(distance, origin_mask, count=4)
+    ori = orientation_values(x)
+    orientation_targets = (0.0, -90.0)
+    orientation_indices = [
+        nearest_orientation_index(ori, target) for target in orientation_targets
+    ]
 
     summaries = []
     for d in distances:
-        per_model = []
-        for model_name, dr in responses.items():
-            panel = response_panel(dr, cell_idx, perturb_idx)
-            per_model.append((model_name, *psi_summary_at_distance(panel, distance, psi, d)))
-        summaries.append((d, per_model))
+        per_orientation = []
+        for target, ori_idx in zip(orientation_targets, orientation_indices):
+            per_model = []
+            for model_name, dr in responses.items():
+                panel = response_panel(dr, cell_idx, perturb_idx)
+                per_model.append(
+                    (
+                        model_name,
+                        *psi_summary_at_distance_orientation(
+                            panel, distance, psi, ori_idx, d
+                        ),
+                    )
+                )
+            per_orientation.append((target, float(ori[ori_idx]), per_model))
+        summaries.append((d, per_orientation))
 
     all_x = torch.cat(
         [
             summary[1]
-            for _, per_model in summaries
+            for _, per_orientation in summaries
+            for _, _, per_model in per_orientation
             for summary in per_model
             if summary[1].numel()
         ]
@@ -283,7 +307,8 @@ def plot_psi_distance_profiles(
     all_y = torch.cat(
         [
             torch.cat([summary[3], summary[4]])
-            for _, per_model in summaries
+            for _, per_orientation in summaries
+            for _, _, per_model in per_orientation
             for summary in per_model
             if summary[3].numel()
         ]
@@ -293,36 +318,45 @@ def plot_psi_distance_profiles(
 
     fig, axes = plt.subplots(
         len(summaries),
-        1,
-        figsize=(6.2, 1.65 * len(summaries)),
+        len(orientation_targets),
+        figsize=(8.6, 1.75 * len(summaries)),
         sharex=True,
         sharey=True,
         constrained_layout=True,
         squeeze=False,
     )
     colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
-    for row, (d, per_model) in enumerate(summaries):
-        ax = axes[row, 0]
-        for n, (model_name, xs, mean_y, min_y, max_y) in enumerate(per_model):
-            color = colors[n % len(colors)]
-            ax.plot(
-                xs,
-                mean_y,
-                marker="o",
-                markersize=2.2,
-                linewidth=1.2,
-                label=model_name,
-                color=color,
-            )
-            ax.fill_between(xs, min_y, max_y, color=color, alpha=0.12, linewidth=0)
-        ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
-        ax.set_xlim(*xlim)
-        ax.set_ylim(*ylim)
-        ax.set_ylabel(f"d={float(d):g} um\n{response_cell_type}")
+    for row, (d, per_orientation) in enumerate(summaries):
+        for col, (target, actual_ori, per_model) in enumerate(per_orientation):
+            ax = axes[row, col]
+            for n, (model_name, xs, mean_y, min_y, max_y) in enumerate(per_model):
+                color = colors[n % len(colors)]
+                ax.plot(
+                    xs,
+                    mean_y,
+                    marker="o",
+                    markersize=2.2,
+                    linewidth=1.2,
+                    label=model_name,
+                    color=color,
+                )
+                ax.fill_between(
+                    xs, min_y, max_y, color=color, alpha=0.12, linewidth=0
+                )
+            ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
+            ax.set_xlim(*xlim)
+            ax.set_ylim(*ylim)
+            if row == 0:
+                ax.set_title(f"pref ori {actual_ori:g} deg")
+            if col == 0:
+                ax.set_ylabel(f"d={float(d):g} um\n{response_cell_type}")
 
-    axes[0, 0].set_title(title)
-    axes[0, 0].legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
-    axes[-1, 0].set_xlabel("Angle from perturbed neuron, psi (deg)")
+    fig.suptitle(title)
+    for ax in axes[-1, :]:
+        ax.set_xlabel("Angle from perturbed neuron, psi (deg)")
+    axes[0, -1].legend(
+        loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False
+    )
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=dpi, bbox_inches="tight")
     return fig
