@@ -169,9 +169,7 @@ python paper/plot_origin_perturbation_celltype_comparison.py \
   --fit-index 0 \
   --experiment-name origin_horizontal_perturbation \
   --seed 0 \
-  --max-neurons 50000 \
-  --separation-psi 0 \
-  --psi-tol 5
+  --max-neurons 50000
 ```
 
 Expected spatial-response outputs:
@@ -186,36 +184,16 @@ results/origin_horizontal_perturbation/seed_0/perturb_PV_response_PV.pdf
 The script also writes profile outputs for each perturb/response combination:
 
 ```text
-results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_ori_at_distance.pdf
-results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_ori_at_psi.pdf
+results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_over_distance.pdf
+results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_over_orientation.pdf
+results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_over_psi.pdf
 ```
 
-The `_ori_at_distance.pdf` file now has distance from the perturbed neuron on
-the x-axis. The `_ori_at_psi.pdf` file has preferred-orientation difference on
-the x-axis for neurons along the selected spatial separation angle.
+The profile x-axes are distance from the perturbed neuron, preferred-orientation
+difference, and spatial angle relative to the perturbed neuron.
 
 Each figure has five rows: original paper, direct-space symmetric psi, random
 iid symmetric psi, direct-space presynaptic psi, and random iid presynaptic psi.
-
-To plot response profiles as a function of preferred-orientation difference for
-neurons at a selected distance and for neurons along a selected spatial
-separation angle:
-
-```bash
-python paper/plot_origin_perturbation_orientation_profiles.py \
-  --N-space 16 16 \
-  --N-ori 8 \
-  --fit-index 0 \
-  --distance 50 \
-  --psi 0 \
-  --experiment-name origin_horizontal_perturbation_orientation_profiles \
-  --seed 0 \
-  --max-neurons 50000
-```
-
-This writes distance-profile and psi-profile figures for each perturb/response
-cell-type pair under
-`results/origin_horizontal_perturbation_orientation_profiles/seed_0/`.
 
 You can override the grid, fit, experiment name, seed, or dense-matrix safety
 limit at submit time:
@@ -228,8 +206,6 @@ FIT_INDEX=0 \
 EXPERIMENT_NAME=origin_horizontal_perturbation_24x24x8 \
 SEED=0 \
 MAX_NEURONS=50000 \
-SEPARATION_PSI=0 \
-PSI_TOL=5 \
 sbatch --time=08:00:00 --cpus-per-task=8 --mem=256G slurm/origin_perturbation.sbatch
 ```
 

@@ -16,8 +16,6 @@ FIT_INDEX="${FIT_INDEX:-0}"
 EXPERIMENT_NAME="${EXPERIMENT_NAME:-origin_horizontal_perturbation}"
 SEED="${SEED:-0}"
 MAX_NEURONS="${MAX_NEURONS:-60000}"
-SEPARATION_PSI="${SEPARATION_PSI:-0}"
-PSI_TOL="${PSI_TOL:-5}"
 
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
 mkdir -p logs
@@ -50,8 +48,6 @@ echo "FIT_INDEX=$FIT_INDEX"
 echo "EXPERIMENT_NAME=$EXPERIMENT_NAME"
 echo "SEED=$SEED"
 echo "MAX_NEURONS=$MAX_NEURONS"
-echo "SEPARATION_PSI=$SEPARATION_PSI"
-echo "PSI_TOL=$PSI_TOL"
 echo "Python: $(command -v python)"
 
 python - <<'PY'
@@ -90,9 +86,7 @@ cmd=(
   --fit-index "$FIT_INDEX" \
   --experiment-name "$EXPERIMENT_NAME" \
   --seed "$SEED" \
-  --max-neurons "$MAX_NEURONS" \
-  --separation-psi "$SEPARATION_PSI" \
-  --psi-tol "$PSI_TOL"
+  --max-neurons "$MAX_NEURONS"
 )
 
 "${cmd[@]}"
