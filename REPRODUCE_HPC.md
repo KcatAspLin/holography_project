@@ -191,11 +191,12 @@ results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPON
 
 The profile x-axes are distance from the perturbed neuron, preferred-orientation
 difference, and spatial angle relative to the perturbed neuron. Profile figures
-use five vertically aligned scatter subplots with shared axis limits, one subplot
-per model.
+use five vertically aligned scatter subplots plus a sixth mean-response subplot,
+all with shared axis limits.
 
 Each figure has five rows: original paper, direct-space symmetric psi, random
-iid symmetric psi, direct-space presynaptic psi, and random iid presynaptic psi.
+iid symmetric psi, direct-space presynaptic psi, and random iid presynaptic psi,
+followed by a row comparing their mean response profiles.
 
 You can override the grid, fit, experiment name, seed, or dense-matrix safety
 limit at submit time:

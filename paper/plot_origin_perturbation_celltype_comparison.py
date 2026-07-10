@@ -104,14 +104,13 @@ def profile_xy(panel, values, origin_mask, *, values_are_orientation=False):
     return x[finite], y[finite]
 
 
-def aggregate_profile_lines(xs, ys):
+def mean_profile_line(xs, ys):
     unique_x = torch.unique(xs).sort().values
-    mean_y, median_y = [], []
+    mean_y = []
     for value in unique_x:
         selected = ys[xs == value]
         mean_y.append(selected.mean())
-        median_y.append(selected.median())
-    return unique_x, torch.stack(mean_y), torch.stack(median_y)
+    return unique_x, torch.stack(mean_y)
 
 
 def plot_scatter_profile(
@@ -152,10 +151,11 @@ def plot_scatter_profile(
     xlim = padded_limits(all_x, lower_bound=x_lower_bound)
     ylim = padded_limits(all_y)
 
+    n_scatter_rows = len(points)
     fig, axes = plt.subplots(
-        len(points),
+        n_scatter_rows + 1,
         1,
-        figsize=(5.8, 1.45 * len(points)),
+        figsize=(5.8, 1.45 * (n_scatter_rows + 1)),
         sharex=True,
         sharey=True,
         constrained_layout=True,
@@ -166,21 +166,21 @@ def plot_scatter_profile(
         ax = axes[n, 0]
         color = colors[n % len(colors)]
         ax.scatter(xs, ys, s=5, alpha=0.55, linewidths=0, color=color)
-        line_x, mean_y, median_y = aggregate_profile_lines(xs, ys)
-        ax.plot(line_x, mean_y, color="black", linewidth=1.2, label="mean")
-        ax.plot(
-            line_x,
-            median_y,
-            color="black",
-            linestyle="--",
-            linewidth=1.2,
-            label="median",
-        )
         ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
         ax.set_xlim(*xlim)
         ax.set_ylim(*ylim)
         ax.set_ylabel(f"{model_name}\n{response_cell_type}")
-        ax.legend(loc="upper right", frameon=False)
+
+    mean_ax = axes[-1, 0]
+    for n, (model_name, xs, ys) in enumerate(points):
+        color = colors[n % len(colors)]
+        line_x, mean_y = mean_profile_line(xs, ys)
+        mean_ax.plot(line_x, mean_y, linewidth=1.2, label=model_name, color=color)
+    mean_ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
+    mean_ax.set_xlim(*xlim)
+    mean_ax.set_ylim(*ylim)
+    mean_ax.set_ylabel(f"mean\n{response_cell_type}")
+    mean_ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
 
     axes[0, 0].set_title(title)
     axes[-1, 0].set_xlabel(xlabel)
