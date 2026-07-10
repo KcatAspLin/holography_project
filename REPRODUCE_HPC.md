@@ -189,10 +189,12 @@ results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPON
 results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_over_psi.pdf
 ```
 
-The profile figures use five vertically aligned scatter subplots plus a sixth
-mean-response subplot, with shared axis limits only for the scatter subplots and
-a tighter response range for the mean subplot. The psi mean-response subplot is
-binned before plotting to reduce angular discretization zigzags.
+The distance and preferred-orientation profile figures use five vertically
+aligned scatter subplots plus a sixth mean-response subplot, with shared axis
+limits only for the scatter subplots and a tighter response range for the mean
+subplot. The psi profile figure uses five distance-conditioned subplots; each
+subplot overlays all five models and shows the mean response over psi with a
+shaded min-to-max range for the selected distance.
 
 To run the same perturbation comparison on a polar spatial grid, use:
 

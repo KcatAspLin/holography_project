@@ -131,6 +131,124 @@ def mean_profile_line(xs, ys, *, bins=None, bin_range=None):
     return unique_x, torch.stack(mean_y)
 
 
+def value_mask(values, target):
+    tol = max(1.0e-4, abs(float(target)) * 1.0e-4)
+    return (values - target).abs() <= tol
+
+
+def selected_distance_values(distance, origin_mask, count=5):
+    distances = torch.unique(distance[~origin_mask]).sort().values
+    if distances.numel() <= count:
+        return distances
+
+    targets = torch.linspace(float(distances[0]), float(distances[-1]), count)
+    selected = []
+    for target in targets:
+        idx = int((distances - target).abs().argmin())
+        value = distances[idx]
+        if not selected or not bool(
+            value_mask(torch.as_tensor(selected[-1]), value)
+        ):
+            selected.append(value)
+    return torch.stack(selected)
+
+
+def psi_summary_at_distance(panel, distance, psi, d):
+    spatial_mask = value_mask(distance, d)
+    psi_values = torch.unique(psi[spatial_mask]).sort().values
+    x, y_mean, y_min, y_max = [], [], [], []
+    for psi_value in psi_values:
+        mask = spatial_mask & value_mask(psi, psi_value)
+        selected = panel[mask, :].reshape(-1)
+        selected = selected[torch.isfinite(selected)]
+        if selected.numel() == 0:
+            continue
+        x.append(psi_value)
+        y_mean.append(selected.mean())
+        y_min.append(selected.min())
+        y_max.append(selected.max())
+    return (
+        torch.stack(x),
+        torch.stack(y_mean),
+        torch.stack(y_min),
+        torch.stack(y_max),
+    )
+
+
+def plot_psi_distance_profiles(
+    x, responses, response_cell_type, perturb_idx, distance, psi, title, out, dpi
+):
+    _, _, _, origin_mask = grid_metadata(x, perturb_idx)
+    cell_types = list(x["cell_type"].categories)
+    cell_idx = cell_types.index(response_cell_type)
+    distances = selected_distance_values(distance, origin_mask, count=5)
+
+    summaries = []
+    for d in distances:
+        per_model = []
+        for model_name, dr in responses.items():
+            panel = response_panel(dr, cell_idx, perturb_idx)
+            per_model.append(
+                (model_name, *psi_summary_at_distance(panel, distance, psi, d))
+            )
+        summaries.append((d, per_model))
+
+    all_x = torch.cat(
+        [
+            summary[1]
+            for _, per_model in summaries
+            for summary in per_model
+            if summary[1].numel()
+        ]
+    )
+    all_y = torch.cat(
+        [
+            torch.cat([summary[3], summary[4]])
+            for _, per_model in summaries
+            for summary in per_model
+            if summary[3].numel()
+        ]
+    )
+    xlim = padded_limits(all_x)
+    ylim = padded_limits(all_y)
+
+    fig, axes = plt.subplots(
+        len(summaries),
+        1,
+        figsize=(6.2, 1.65 * len(summaries)),
+        sharex=True,
+        sharey=True,
+        constrained_layout=True,
+        squeeze=False,
+    )
+    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    for row, (d, per_model) in enumerate(summaries):
+        ax = axes[row, 0]
+        for n, (model_name, xs, mean_y, min_y, max_y) in enumerate(per_model):
+            color = colors[n % len(colors)]
+            ax.plot(
+                xs,
+                mean_y,
+                marker="o",
+                markersize=2.2,
+                linewidth=1.2,
+                label=model_name,
+                color=color,
+            )
+            ax.fill_between(xs, min_y, max_y, color=color, alpha=0.12, linewidth=0)
+        ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
+        ax.set_xlim(*xlim)
+        ax.set_ylim(*ylim)
+        ax.set_ylabel(f"d={float(d):g} um\n{response_cell_type}")
+
+    axes[0, 0].set_title(title)
+    axes[0, 0].legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
+    axes[-1, 0].set_xlabel("Angle from perturbed neuron, psi (deg)")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=dpi, bbox_inches="tight")
+    return fig
+
+
 def plot_scatter_profile(
     x,
     responses,
@@ -325,20 +443,19 @@ def main():
                         "_over_psi.pdf"
                     )
                 )
-                fig = plot_scatter_profile(
+                fig = plot_psi_distance_profiles(
                     x,
                     responses,
                     response_cell_type,
                     perturb_idx,
+                    distance,
                     psi,
-                    "Angle from perturbed neuron, psi (deg)",
                     (
                         f"perturb {perturb_cell_type}, {response_cell_type} response, "
                         "response over psi"
                     ),
                     out,
                     args.dpi,
-                    mean_bins=24,
                 )
                 plt.close(fig)
                 print(f"Saved {out} using fit {fit}.")
