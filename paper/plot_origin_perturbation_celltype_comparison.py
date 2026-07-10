@@ -104,9 +104,13 @@ def profile_xy(panel, values, origin_mask, *, values_are_orientation=False):
     return x[finite], y[finite]
 
 
-def mean_profile_line(xs, ys, *, bins=None):
+def mean_profile_line(xs, ys, *, bins=None, bin_range=None):
     if bins is not None:
-        edges = torch.linspace(xs.min(), xs.max(), bins + 1, dtype=xs.dtype)
+        if bin_range is None:
+            lower, upper = xs.min(), xs.max()
+        else:
+            lower, upper = bin_range
+        edges = torch.linspace(lower, upper, bins + 1, dtype=xs.dtype)
         centers, mean_y = [], []
         for idx in range(bins):
             if idx == bins - 1:
@@ -197,6 +201,119 @@ def plot_scatter_profile(
 
     axes[0, 0].set_title(title)
     axes[-1, 0].set_xlabel(xlabel)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=dpi, bbox_inches="tight")
+    return fig
+
+
+def response_limits(values):
+    lower, upper = padded_limits(values)
+    lower = min(lower, 0.0)
+    upper = max(upper, 0.0)
+    return lower, upper
+
+
+def response_to_radius(values, limits):
+    return values - limits[0]
+
+
+def format_radar_response_axis(ax, limits):
+    lower, upper = limits
+    radius_max = upper - lower
+    ax.set_ylim(0.0, radius_max)
+    ticks = torch.linspace(lower, upper, 5)
+    ax.set_yticks((ticks - lower).tolist())
+    ax.set_yticklabels([f"{float(tick):g}" for tick in ticks])
+    ax.set_thetagrids(range(0, 360, 45))
+    ax.set_rlabel_position(135)
+    ax.tick_params(labelsize=6)
+
+    zero_radius = -lower
+    if 0.0 <= zero_radius <= radius_max:
+        theta = torch.linspace(0.0, 2.0 * torch.pi, 361)
+        radius = torch.full_like(theta, zero_radius)
+        ax.plot(theta, radius, color="black", linewidth=0.6, alpha=0.6)
+
+
+def close_radar_line(theta, radius):
+    if theta.numel() == 0:
+        return theta, radius
+    return (
+        torch.cat([theta, theta[:1] + 2.0 * torch.pi]),
+        torch.cat([radius, radius[:1]]),
+    )
+
+
+def plot_psi_radar_profile(
+    responses,
+    response_cell_type,
+    perturb_idx,
+    psi,
+    distance,
+    space_extent,
+    title,
+    out,
+    dpi,
+    *,
+    mean_bins=24,
+):
+    cell_idx = CELL_TYPES.index(response_cell_type)
+    origin_mask = distance == 0.0
+    spatial_mask = (~origin_mask) & (distance <= space_extent / 2.0)
+
+    points = []
+    for model_name, dr in responses.items():
+        panel = response_panel(dr, cell_idx, perturb_idx)
+        points.append((model_name, *profile_xy(panel, psi, ~spatial_mask)))
+
+    all_y = torch.cat([point[2] for point in points if point[2].numel()])
+    scatter_limits = response_limits(all_y)
+
+    mean_lines = []
+    for model_name, xs, ys in points:
+        line_x, mean_y = mean_profile_line(
+            xs, ys, bins=mean_bins, bin_range=(-180.0, 180.0)
+        )
+        mean_lines.append((model_name, line_x, mean_y))
+    all_mean_y = torch.cat([line[2] for line in mean_lines if line[2].numel()])
+    mean_limits = response_limits(all_mean_y)
+
+    fig, axes = plt.subplots(
+        3,
+        2,
+        figsize=(8.0, 8.8),
+        subplot_kw={"projection": "polar"},
+        constrained_layout=True,
+    )
+    axes = axes.reshape(-1)
+    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+
+    for n, (model_name, xs, ys) in enumerate(points):
+        ax = axes[n]
+        color = colors[n % len(colors)]
+        ax.scatter(
+            torch.deg2rad(xs),
+            response_to_radius(ys, scatter_limits),
+            s=5,
+            alpha=0.55,
+            linewidths=0,
+            color=color,
+        )
+        format_radar_response_axis(ax, scatter_limits)
+        ax.set_title(f"{model_name}\n{response_cell_type}", pad=10)
+
+    mean_ax = axes[-1]
+    for n, (model_name, line_x, mean_y) in enumerate(mean_lines):
+        color = colors[n % len(colors)]
+        theta, radius = close_radar_line(
+            torch.deg2rad(line_x), response_to_radius(mean_y, mean_limits)
+        )
+        mean_ax.plot(theta, radius, linewidth=1.2, label=model_name, color=color)
+    format_radar_response_axis(mean_ax, mean_limits)
+    mean_ax.set_title(f"mean\n{response_cell_type}", pad=10)
+    mean_ax.legend(loc="center left", bbox_to_anchor=(1.12, 0.5), frameon=False)
+
+    fig.suptitle(title)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=dpi, bbox_inches="tight")
     return fig
@@ -314,13 +431,13 @@ def main():
                         "_over_psi.pdf"
                     )
                 )
-                fig = plot_scatter_profile(
-                    x,
+                fig = plot_psi_radar_profile(
                     responses,
                     response_cell_type,
                     perturb_idx,
                     psi,
-                    "Angle from perturbed neuron, psi (deg)",
+                    distance,
+                    args.space_extent,
                     (
                         f"perturb {perturb_cell_type}, {response_cell_type} response, "
                         "response over psi"

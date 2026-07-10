@@ -189,15 +189,11 @@ results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPON
 results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_over_psi.pdf
 ```
 
-The profile x-axes are distance from the perturbed neuron, preferred-orientation
-difference, and spatial angle relative to the perturbed neuron. Profile figures
-use five vertically aligned scatter subplots plus a sixth mean-response subplot,
-with shared axis limits only for the scatter subplots. The psi mean-response
-subplot is binned before plotting to reduce angular discretization zigzags.
-
-Each figure has five rows: original paper, direct-space symmetric psi, random
-iid symmetric psi, direct-space presynaptic psi, and random iid presynaptic psi,
-followed by a row comparing their mean response profiles.
+The distance and preferred-orientation profile figures use five vertically
+aligned scatter subplots plus a sixth mean-response subplot, with shared axis
+limits only for the scatter subplots. The psi profile uses polar radar subplots
+for the same five model responses plus a sixth binned mean-response radar plot;
+it only includes spatial points inside the circle of diameter `--space-extent`.
 
 You can override the grid, fit, experiment name, seed, or dense-matrix safety
 limit at submit time:
