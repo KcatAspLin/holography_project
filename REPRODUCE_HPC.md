@@ -184,6 +184,26 @@ results/origin_horizontal_perturbation/seed_0/perturb_PV_response_PV.pdf
 Each figure has five rows: original paper, direct-space symmetric psi, random
 iid symmetric psi, direct-space presynaptic psi, and random iid presynaptic psi.
 
+To plot response profiles as a function of preferred-orientation difference for
+neurons at a selected distance and for neurons along a selected spatial
+separation angle:
+
+```bash
+python paper/plot_origin_perturbation_orientation_profiles.py \
+  --N-space 16 16 \
+  --N-ori 8 \
+  --fit-index 0 \
+  --distance 50 \
+  --psi 0 \
+  --experiment-name origin_horizontal_perturbation_orientation_profiles \
+  --seed 0 \
+  --max-neurons 50000
+```
+
+This writes distance-profile and psi-profile figures for each perturb/response
+cell-type pair under
+`results/origin_horizontal_perturbation_orientation_profiles/seed_0/`.
+
 You can override the grid, fit, experiment name, seed, or dense-matrix safety
 limit at submit time:
 
