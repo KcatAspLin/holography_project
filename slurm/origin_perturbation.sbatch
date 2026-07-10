@@ -16,6 +16,10 @@ FIT_INDEX="${FIT_INDEX:-0}"
 EXPERIMENT_NAME="${EXPERIMENT_NAME:-origin_horizontal_perturbation}"
 SEED="${SEED:-0}"
 MAX_NEURONS="${MAX_NEURONS:-60000}"
+DISTANCE="${DISTANCE:-50}"
+DISTANCE_TOL="${DISTANCE_TOL:-}"
+SEPARATION_PSI="${SEPARATION_PSI:-0}"
+PSI_TOL="${PSI_TOL:-5}"
 
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
 mkdir -p logs
@@ -48,6 +52,10 @@ echo "FIT_INDEX=$FIT_INDEX"
 echo "EXPERIMENT_NAME=$EXPERIMENT_NAME"
 echo "SEED=$SEED"
 echo "MAX_NEURONS=$MAX_NEURONS"
+echo "DISTANCE=$DISTANCE"
+echo "DISTANCE_TOL=${DISTANCE_TOL:-nearest grid distance}"
+echo "SEPARATION_PSI=$SEPARATION_PSI"
+echo "PSI_TOL=$PSI_TOL"
 echo "Python: $(command -v python)"
 
 python - <<'PY'
@@ -79,10 +87,21 @@ else
   echo "nvidia-smi not found; continuing without NVIDIA GPU diagnostics."
 fi
 
-python paper/plot_origin_perturbation_celltype_comparison.py \
+cmd=(
+  python paper/plot_origin_perturbation_celltype_comparison.py
   --N-space "$N_SPACE_X" "$N_SPACE_Y" \
   --N-ori "$N_ORI" \
   --fit-index "$FIT_INDEX" \
   --experiment-name "$EXPERIMENT_NAME" \
   --seed "$SEED" \
-  --max-neurons "$MAX_NEURONS"
+  --max-neurons "$MAX_NEURONS" \
+  --distance "$DISTANCE" \
+  --separation-psi "$SEPARATION_PSI" \
+  --psi-tol "$PSI_TOL"
+)
+
+if [[ -n "$DISTANCE_TOL" ]]; then
+  cmd+=(--distance-tol "$DISTANCE_TOL")
+fi
+
+"${cmd[@]}"

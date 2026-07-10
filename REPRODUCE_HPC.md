@@ -169,16 +169,27 @@ python paper/plot_origin_perturbation_celltype_comparison.py \
   --fit-index 0 \
   --experiment-name origin_horizontal_perturbation \
   --seed 0 \
-  --max-neurons 50000
+  --max-neurons 50000 \
+  --distance 50 \
+  --separation-psi 0 \
+  --psi-tol 5
 ```
 
-Expected output:
+Expected spatial-response outputs:
 
 ```text
 results/origin_horizontal_perturbation/seed_0/perturb_PYR_response_PYR.pdf
 results/origin_horizontal_perturbation/seed_0/perturb_PYR_response_PV.pdf
 results/origin_horizontal_perturbation/seed_0/perturb_PV_response_PYR.pdf
 results/origin_horizontal_perturbation/seed_0/perturb_PV_response_PV.pdf
+```
+
+The script also writes orientation-profile outputs for each perturb/response
+combination:
+
+```text
+results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_ori_at_distance.pdf
+results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_ori_at_psi.pdf
 ```
 
 Each figure has five rows: original paper, direct-space symmetric psi, random
@@ -215,6 +226,10 @@ FIT_INDEX=0 \
 EXPERIMENT_NAME=origin_horizontal_perturbation_24x24x8 \
 SEED=0 \
 MAX_NEURONS=50000 \
+DISTANCE=50 \
+DISTANCE_TOL=10 \
+SEPARATION_PSI=0 \
+PSI_TOL=5 \
 sbatch --time=08:00:00 --cpus-per-task=8 --mem=256G slurm/origin_perturbation.sbatch
 ```
 
