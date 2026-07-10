@@ -1,0 +1,499 @@
+import argparse
+import math
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+from matplotlib import colors
+import torch
+
+from mpl_config import set_rcParams
+from niarb.nn.modules import frame
+from niarb.tensors import categorical, periodic
+from plot_origin_perturbation_comparison import (
+    MODEL_VARIANTS,
+    load_model_state,
+    make_model,
+    nearest_index,
+    response,
+    sorted_fit_paths,
+)
+
+
+CELL_TYPES = ("PYR", "PV")
+
+
+def angle_diff_deg(x, y):
+    return (x - y + 180.0) % 360.0 - 180.0
+
+
+def validate_args(parser, args):
+    if args.N_space[0] < 2:
+        parser.error("--N-space radial count must be at least 2.")
+    if args.N_space[1] < 3:
+        parser.error("--N-space angular count must be at least 3.")
+    if args.N_ori % 2:
+        parser.error("--N-ori must be even so the grid contains horizontal ori=0.")
+    if args.fit is not None and args.fit_index != 0:
+        parser.error("Use either --fit or --fit-index, not both.")
+
+    N_spatial = 1 + (args.N_space[0] - 1) * args.N_space[1]
+    N_total = len(CELL_TYPES) * N_spatial * args.N_ori
+    if args.max_neurons is not None and N_total > args.max_neurons:
+        memory_gib = N_total**2 * 8 / 1024**3
+        parser.error(
+            f"This run has {N_total} neurons and needs at least {memory_gib:.1f} GiB "
+            "for one float64 dense matrix. Reduce --N-space/--N-ori or raise "
+            "--max-neurons deliberately on a large-memory machine."
+        )
+
+
+def polar_points(N_radial, N_angle, space_extent):
+    radius_max = space_extent / 2.0
+    radii = torch.linspace(0.0, radius_max, N_radial)
+    angles = torch.linspace(-180.0, 180.0, N_angle + 1)[:-1]
+    angles_rad = torch.deg2rad(angles)
+
+    points = [torch.zeros(2)]
+    point_radii = [torch.tensor(0.0)]
+    point_angles = [torch.tensor(0.0)]
+    space_dV = [math.pi * (radii[1].item() / 2.0) ** 2]
+
+    for idx, radius in enumerate(radii[1:], start=1):
+        if idx == 1:
+            inner = radii[1] / 2.0
+        else:
+            inner = (radii[idx - 1] + radius) / 2.0
+
+        if idx == N_radial - 1:
+            outer = radii[-1]
+        else:
+            outer = (radius + radii[idx + 1]) / 2.0
+
+        sector_area = math.pi * float(outer**2 - inner**2) / N_angle
+        for angle, angle_rad in zip(angles, angles_rad):
+            points.append(
+                radius * torch.stack([torch.cos(angle_rad), torch.sin(angle_rad)])
+            )
+            point_radii.append(radius)
+            point_angles.append(angle)
+            space_dV.append(sector_area)
+
+    return {
+        "space": torch.stack(points),
+        "radius": torch.stack(point_radii),
+        "angle": torch.stack(point_angles),
+        "space_dV": torch.tensor(space_dV),
+    }
+
+
+def make_polar_grid(N_space, N_ori, space_extent, cell_types):
+    N_radial, N_angle = N_space
+    polar = polar_points(N_radial, N_angle, space_extent)
+    n_cell_types = len(cell_types)
+    n_points = polar["space"].shape[0]
+
+    cell_type = categorical.as_tensor(
+        torch.arange(n_cell_types), categories=cell_types
+    ).reshape(n_cell_types, 1, 1)
+    ori = periodic.linspace(-90.0, 90.0, N_ori).reshape(1, 1, N_ori, 1)
+    space = polar["space"].reshape(1, n_points, 1, 2)
+    space_dV = polar["space_dV"].reshape(1, n_points, 1)
+    dV = space_dV * float(ori.period.prod()) / N_ori
+
+    x = frame.ParameterFrame(
+        {
+            "cell_type": cell_type,
+            "space": space,
+            "ori": ori,
+            "dV": dV,
+            "space_dV": space_dV,
+        },
+        ndim=3,
+    )
+    x["dh"] = torch.zeros(x.shape)
+    return x, polar
+
+
+def perturb_origin_horizontal(x, cell_type, dh):
+    cell_types = list(x["cell_type"].categories)
+    cell_idx = cell_types.index(cell_type)
+    ori = x["ori"][0, 0, :].tensor.squeeze(-1)
+    iori = nearest_index(ori, 0.0)
+    point_idx = 0
+    x["dh"][cell_idx, point_idx, iori] = dh
+    return cell_idx, point_idx, iori
+
+
+def compute_responses(state, x, seed):
+    return {
+        label: response(make_model(state, model_kwargs, seed=seed), x)
+        for label, model_kwargs in MODEL_VARIANTS
+    }
+
+
+def grid_metadata(x, perturb_idx):
+    _, point_idx, iori = perturb_idx
+    space = x["space"][0, :, 0].detach().cpu()
+    ori = x["ori"][0, 0, :].tensor.squeeze(-1).detach().cpu()
+    perturb_ori = float(ori[iori])
+    rel_ori = torch.as_tensor(
+        angle_diff_deg(ori.numpy(), perturb_ori), dtype=ori.dtype
+    )
+    d_space = space - space[point_idx]
+    distance = d_space.norm(dim=-1)
+    psi = torch.atan2(d_space[..., 1], d_space[..., 0]) * 180.0 / torch.pi
+    origin_mask = distance <= 1.0e-8
+    return rel_ori, distance, psi, origin_mask
+
+
+def response_panel(dr, cell_idx, perturb_idx):
+    panel = dr[cell_idx].clone()
+    perturb_cell_idx, point_idx, iori = perturb_idx
+    if cell_idx == perturb_cell_idx:
+        panel[point_idx, iori] = torch.nan
+    return panel
+
+
+def padded_limits(values, *, lower_bound=None):
+    values = torch.as_tensor(values)
+    finite = values[torch.isfinite(values)]
+    if finite.numel() == 0:
+        return (0.0, 1.0)
+
+    vmin = float(finite.min())
+    vmax = float(finite.max())
+    if vmin == vmax:
+        pad = 1.0 if vmin == 0.0 else abs(vmin) * 0.05
+    else:
+        pad = (vmax - vmin) * 0.05
+    lower = vmin - pad
+    if lower_bound is not None:
+        lower = lower_bound
+    return (lower, vmax + pad)
+
+
+def profile_xy(panel, values, origin_mask, *, values_are_orientation=False):
+    selected = panel[~origin_mask, :]
+    if values_are_orientation:
+        x = values.expand_as(selected)
+    else:
+        x = values[~origin_mask].unsqueeze(-1).expand_as(selected)
+
+    x = x.reshape(-1)
+    y = selected.reshape(-1)
+    finite = torch.isfinite(x) & torch.isfinite(y)
+    return x[finite], y[finite]
+
+
+def mean_profile_line(xs, ys, *, bins=None, bin_range=None):
+    if bins is not None:
+        if bin_range is None:
+            lower, upper = xs.min(), xs.max()
+        else:
+            lower, upper = bin_range
+        edges = torch.linspace(lower, upper, bins + 1, dtype=xs.dtype)
+        centers, mean_y = [], []
+        for idx in range(bins):
+            if idx == bins - 1:
+                mask = (xs >= edges[idx]) & (xs <= edges[idx + 1])
+            else:
+                mask = (xs >= edges[idx]) & (xs < edges[idx + 1])
+            if not mask.any():
+                continue
+            centers.append((edges[idx] + edges[idx + 1]) / 2.0)
+            mean_y.append(ys[mask].mean())
+        return torch.stack(centers), torch.stack(mean_y)
+
+    unique_x = torch.unique(xs).sort().values
+    mean_y = []
+    for value in unique_x:
+        selected = ys[xs == value]
+        mean_y.append(selected.mean())
+    return unique_x, torch.stack(mean_y)
+
+
+def plot_responses_polar(x, responses, cell_type, perturb_idx, out, dpi):
+    space = x["space"][0, :, 0].detach().cpu()
+    ori = x["ori"][0, 0, :].tensor.squeeze(-1).detach().cpu()
+    cell_types = list(x["cell_type"].categories)
+    cell_idx = cell_types.index(cell_type)
+
+    panels = {
+        model_name: response_panel(dr, cell_idx, perturb_idx)
+        for model_name, dr in responses.items()
+    }
+    vmax = max(float(torch.nan_to_num(panel.abs()).max()) for panel in panels.values())
+    if vmax == 0.0:
+        vmax = 1.0
+    norm = colors.TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
+    cmap = plt.get_cmap("coolwarm").copy()
+    cmap.set_bad("white")
+
+    nrows, ncols = len(responses), len(ori)
+    fig, axes = plt.subplots(
+        nrows,
+        ncols,
+        figsize=(1.65 * ncols, 1.8 * nrows),
+        sharex=True,
+        sharey=True,
+        constrained_layout=True,
+        squeeze=False,
+    )
+
+    radius_max = float(space.norm(dim=-1).max())
+    image = None
+    for row, (model_name, panel) in enumerate(panels.items()):
+        for col, theta in enumerate(ori):
+            ax = axes[row, col]
+            image = ax.scatter(
+                space[:, 0],
+                space[:, 1],
+                c=panel[:, col],
+                s=16,
+                cmap=cmap,
+                norm=norm,
+                linewidths=0,
+            )
+            if row == 0:
+                ax.set_title(f"{float(theta):g} deg")
+            if col == 0:
+                ax.set_ylabel(f"{model_name}\ny (um)")
+            if row == nrows - 1:
+                ax.set_xlabel("x (um)")
+            ax.set_xlim(-radius_max, radius_max)
+            ax.set_ylim(-radius_max, radius_max)
+            ax.set_aspect("equal")
+            ax.axhline(0, color="black", linewidth=0.25, alpha=0.4)
+            ax.axvline(0, color="black", linewidth=0.25, alpha=0.4)
+
+    cbar = fig.colorbar(image, ax=axes, shrink=0.72)
+    cbar.set_label(f"{cell_type} response")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=dpi, bbox_inches="tight")
+    return fig
+
+
+def plot_scatter_profile(
+    x,
+    responses,
+    response_cell_type,
+    perturb_idx,
+    values,
+    xlabel,
+    title,
+    out,
+    dpi,
+    *,
+    values_are_orientation=False,
+    x_lower_bound=None,
+    mean_bins=None,
+):
+    _, _, _, origin_mask = grid_metadata(x, perturb_idx)
+    cell_types = list(x["cell_type"].categories)
+    cell_idx = cell_types.index(response_cell_type)
+
+    points = []
+    for model_name, dr in responses.items():
+        panel = response_panel(dr, cell_idx, perturb_idx)
+        points.append(
+            (
+                model_name,
+                *profile_xy(
+                    panel,
+                    values,
+                    origin_mask,
+                    values_are_orientation=values_are_orientation,
+                ),
+            )
+        )
+
+    all_x = torch.cat([point[1] for point in points if point[1].numel()])
+    all_y = torch.cat([point[2] for point in points if point[2].numel()])
+    xlim = padded_limits(all_x, lower_bound=x_lower_bound)
+    ylim = padded_limits(all_y)
+
+    n_scatter_rows = len(points)
+    fig, axes = plt.subplots(
+        n_scatter_rows + 1,
+        1,
+        figsize=(5.8, 1.45 * (n_scatter_rows + 1)),
+        sharex=False,
+        sharey=False,
+        constrained_layout=True,
+        squeeze=False,
+    )
+    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    for n, (model_name, xs, ys) in enumerate(points):
+        ax = axes[n, 0]
+        color = colors[n % len(colors)]
+        ax.scatter(xs, ys, s=5, alpha=0.55, linewidths=0, color=color)
+        ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
+        ax.set_xlim(*xlim)
+        ax.set_ylim(*ylim)
+        ax.set_ylabel(f"{model_name}\n{response_cell_type}")
+
+    mean_lines = []
+    for model_name, xs, ys in points:
+        line_x, mean_y = mean_profile_line(xs, ys, bins=mean_bins)
+        mean_lines.append((model_name, line_x, mean_y))
+    all_mean_y = torch.cat([line[2] for line in mean_lines if line[2].numel()])
+    mean_ylim = padded_limits(all_mean_y)
+
+    mean_ax = axes[-1, 0]
+    for n, (model_name, line_x, mean_y) in enumerate(mean_lines):
+        color = colors[n % len(colors)]
+        mean_ax.plot(line_x, mean_y, linewidth=1.2, label=model_name, color=color)
+    mean_ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
+    mean_ax.set_ylim(*mean_ylim)
+    mean_ax.set_ylabel(f"mean\n{response_cell_type}")
+    mean_ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
+
+    axes[0, 0].set_title(title)
+    axes[-1, 0].set_xlabel(xlabel)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=dpi, bbox_inches="tight")
+    return fig
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--fits-dir",
+        type=Path,
+        default=Path("paper/model_fits/no_disorder/fits"),
+    )
+    parser.add_argument("--fit", type=Path)
+    parser.add_argument("--fit-index", type=int, default=0)
+    parser.add_argument(
+        "--N-space",
+        type=int,
+        nargs=2,
+        default=(16, 16),
+        metavar=("N_RADIAL", "N_ANGLE"),
+        help="Polar grid resolution: radial samples including origin, angular samples per ring.",
+    )
+    parser.add_argument("--N-ori", type=int, default=8)
+    parser.add_argument("--space-extent", type=float, default=200.0)
+    parser.add_argument("--dh", type=float, default=10000.0)
+    parser.add_argument("--max-neurons", type=int, default=50000)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--seeds", type=int, nargs="+")
+    parser.add_argument(
+        "--experiment-name",
+        default="origin_horizontal_perturbation_polar_celltypes",
+    )
+    parser.add_argument("--dpi", type=int, default=300)
+    args = parser.parse_args()
+    validate_args(parser, args)
+
+    fit = args.fit or sorted_fit_paths(args.fits_dir)[args.fit_index]
+    state = load_model_state(fit)
+    seeds = args.seeds if args.seeds is not None else [args.seed]
+
+    set_rcParams()
+    for seed in seeds:
+        torch.manual_seed(seed)
+        seed_dir = Path("results") / args.experiment_name / f"seed_{seed}"
+
+        for perturb_cell_type in CELL_TYPES:
+            x, _ = make_polar_grid(
+                args.N_space, args.N_ori, args.space_extent, CELL_TYPES
+            )
+            perturb_idx = perturb_origin_horizontal(x, perturb_cell_type, args.dh)
+            responses = compute_responses(state, x, seed)
+            rel_ori, distance, psi, _ = grid_metadata(x, perturb_idx)
+
+            for response_cell_type in CELL_TYPES:
+                out = (
+                    seed_dir
+                    / f"perturb_{perturb_cell_type}_response_{response_cell_type}.pdf"
+                )
+                fig = plot_responses_polar(
+                    x,
+                    responses,
+                    response_cell_type,
+                    perturb_idx,
+                    out,
+                    args.dpi,
+                )
+                plt.close(fig)
+                print(f"Saved {out} using fit {fit}.")
+
+                out = (
+                    seed_dir
+                    / (
+                        f"perturb_{perturb_cell_type}_response_{response_cell_type}"
+                        "_over_distance.pdf"
+                    )
+                )
+                fig = plot_scatter_profile(
+                    x,
+                    responses,
+                    response_cell_type,
+                    perturb_idx,
+                    distance,
+                    "Distance from perturbed neuron (um)",
+                    (
+                        f"perturb {perturb_cell_type}, {response_cell_type} response, "
+                        "response over distance"
+                    ),
+                    out,
+                    args.dpi,
+                    x_lower_bound=0.0,
+                )
+                plt.close(fig)
+                print(f"Saved {out} using fit {fit}.")
+
+                out = (
+                    seed_dir
+                    / (
+                        f"perturb_{perturb_cell_type}_response_{response_cell_type}"
+                        "_over_orientation.pdf"
+                    )
+                )
+                fig = plot_scatter_profile(
+                    x,
+                    responses,
+                    response_cell_type,
+                    perturb_idx,
+                    rel_ori,
+                    "Preferred orientation difference (deg)",
+                    (
+                        f"perturb {perturb_cell_type}, {response_cell_type} response, "
+                        "response over preferred orientation"
+                    ),
+                    out,
+                    args.dpi,
+                    values_are_orientation=True,
+                )
+                plt.close(fig)
+                print(f"Saved {out} using fit {fit}.")
+
+                out = (
+                    seed_dir
+                    / (
+                        f"perturb_{perturb_cell_type}_response_{response_cell_type}"
+                        "_over_psi.pdf"
+                    )
+                )
+                fig = plot_scatter_profile(
+                    x,
+                    responses,
+                    response_cell_type,
+                    perturb_idx,
+                    psi,
+                    "Angle from perturbed neuron, psi (deg)",
+                    (
+                        f"perturb {perturb_cell_type}, {response_cell_type} response, "
+                        "response over psi"
+                    ),
+                    out,
+                    args.dpi,
+                    mean_bins=24,
+                )
+                plt.close(fig)
+                print(f"Saved {out} using fit {fit}.")
+
+
+if __name__ == "__main__":
+    main()

@@ -194,6 +194,25 @@ mean-response subplot, with shared axis limits only for the scatter subplots and
 a tighter response range for the mean subplot. The psi mean-response subplot is
 binned before plotting to reduce angular discretization zigzags.
 
+To run the same perturbation comparison on a polar spatial grid, use:
+
+```bash
+SPATIAL_GRID=polar \
+N_SPACE_X=16 \
+N_SPACE_Y=16 \
+N_ORI=8 \
+FIT_INDEX=0 \
+EXPERIMENT_NAME=origin_horizontal_perturbation_polar \
+SEED=0 \
+MAX_NEURONS=50000 \
+sbatch --time=04:00:00 --cpus-per-task=8 --mem=128G slurm/origin_perturbation.sbatch
+```
+
+For the polar script, `--N-space N_RADIAL N_ANGLE` means one origin point plus
+`N_RADIAL - 1` radial rings with `N_ANGLE` points per ring. The model still
+receives 2D Euclidean `space = (r cos alpha, r sin alpha)` coordinates, while
+the spatial response panels are plotted as scatter plots over the disk.
+
 You can override the grid, fit, experiment name, seed, or dense-matrix safety
 limit at submit time:
 

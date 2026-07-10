@@ -9,13 +9,29 @@
 set -euo pipefail
 
 ENV_NAME="${ENV_NAME:-chau-2024-exact}"
+SPATIAL_GRID="${SPATIAL_GRID:-cartesian}"
 N_SPACE_X="${N_SPACE_X:-32}"
 N_SPACE_Y="${N_SPACE_Y:-32}"
 N_ORI="${N_ORI:-8}"
 FIT_INDEX="${FIT_INDEX:-0}"
-EXPERIMENT_NAME="${EXPERIMENT_NAME:-origin_horizontal_perturbation}"
+EXPERIMENT_NAME="${EXPERIMENT_NAME:-}"
 SEED="${SEED:-0}"
 MAX_NEURONS="${MAX_NEURONS:-60000}"
+
+case "$SPATIAL_GRID" in
+  cartesian)
+    SCRIPT="paper/plot_origin_perturbation_celltype_comparison.py"
+    EXPERIMENT_NAME="${EXPERIMENT_NAME:-origin_horizontal_perturbation}"
+    ;;
+  polar)
+    SCRIPT="paper/plot_origin_perturbation_polar_celltype_comparison.py"
+    EXPERIMENT_NAME="${EXPERIMENT_NAME:-origin_horizontal_perturbation_polar}"
+    ;;
+  *)
+    echo "ERROR: SPATIAL_GRID must be 'cartesian' or 'polar', got '$SPATIAL_GRID'." >&2
+    exit 2
+    ;;
+esac
 
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
 mkdir -p logs
@@ -41,6 +57,8 @@ echo "Host: $(hostname)"
 echo "Job: ${SLURM_JOB_ID:-none}"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
 echo "ENV_NAME=$ENV_NAME"
+echo "SPATIAL_GRID=$SPATIAL_GRID"
+echo "SCRIPT=$SCRIPT"
 echo "N_SPACE_X=$N_SPACE_X"
 echo "N_SPACE_Y=$N_SPACE_Y"
 echo "N_ORI=$N_ORI"
@@ -80,7 +98,7 @@ else
 fi
 
 cmd=(
-  python paper/plot_origin_perturbation_celltype_comparison.py
+  python "$SCRIPT"
   --N-space "$N_SPACE_X" "$N_SPACE_Y" \
   --N-ori "$N_ORI" \
   --fit-index "$FIT_INDEX" \
