@@ -104,7 +104,21 @@ def profile_xy(panel, values, origin_mask, *, values_are_orientation=False):
     return x[finite], y[finite]
 
 
-def mean_profile_line(xs, ys):
+def mean_profile_line(xs, ys, *, bins=None):
+    if bins is not None:
+        edges = torch.linspace(xs.min(), xs.max(), bins + 1, dtype=xs.dtype)
+        centers, mean_y = [], []
+        for idx in range(bins):
+            if idx == bins - 1:
+                mask = (xs >= edges[idx]) & (xs <= edges[idx + 1])
+            else:
+                mask = (xs >= edges[idx]) & (xs < edges[idx + 1])
+            if not mask.any():
+                continue
+            centers.append((edges[idx] + edges[idx + 1]) / 2.0)
+            mean_y.append(ys[mask].mean())
+        return torch.stack(centers), torch.stack(mean_y)
+
     unique_x = torch.unique(xs).sort().values
     mean_y = []
     for value in unique_x:
@@ -126,6 +140,7 @@ def plot_scatter_profile(
     *,
     values_are_orientation=False,
     x_lower_bound=None,
+    mean_bins=None,
 ):
     _, _, _, origin_mask = grid_metadata(x, perturb_idx)
     cell_types = list(x["cell_type"].categories)
@@ -174,7 +189,7 @@ def plot_scatter_profile(
     mean_ax = axes[-1, 0]
     for n, (model_name, xs, ys) in enumerate(points):
         color = colors[n % len(colors)]
-        line_x, mean_y = mean_profile_line(xs, ys)
+        line_x, mean_y = mean_profile_line(xs, ys, bins=mean_bins)
         mean_ax.plot(line_x, mean_y, linewidth=1.2, label=model_name, color=color)
     mean_ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
     mean_ax.set_ylabel(f"mean\n{response_cell_type}")
@@ -312,6 +327,7 @@ def main():
                     ),
                     out,
                     args.dpi,
+                    mean_bins=24,
                 )
                 plt.close(fig)
                 print(f"Saved {out} using fit {fit}.")
