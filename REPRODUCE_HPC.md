@@ -191,9 +191,10 @@ results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPON
 
 The distance and preferred-orientation profile figures use five vertically
 aligned scatter subplots plus a sixth mean-response subplot, with shared axis
-limits only for the scatter subplots. The psi profile uses polar radar subplots
-for the same five model responses plus a sixth binned mean-response radar plot;
-it only includes spatial points inside the circle of diameter `--space-extent`.
+limits only for the scatter subplots and a tighter response range for the mean
+subplot. The psi profile uses polar radar subplots for the same five model
+responses plus a sixth binned mean-response radar plot; it only includes spatial
+points inside the circle of diameter `--space-extent`.
 
 You can override the grid, fit, experiment name, seed, or dense-matrix safety
 limit at submit time:

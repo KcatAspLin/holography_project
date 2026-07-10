@@ -190,12 +190,19 @@ def plot_scatter_profile(
         ax.set_ylim(*ylim)
         ax.set_ylabel(f"{model_name}\n{response_cell_type}")
 
-    mean_ax = axes[-1, 0]
-    for n, (model_name, xs, ys) in enumerate(points):
-        color = colors[n % len(colors)]
+    mean_lines = []
+    for model_name, xs, ys in points:
         line_x, mean_y = mean_profile_line(xs, ys, bins=mean_bins)
+        mean_lines.append((model_name, line_x, mean_y))
+    all_mean_y = torch.cat([line[2] for line in mean_lines if line[2].numel()])
+    mean_ylim = padded_limits(all_mean_y)
+
+    mean_ax = axes[-1, 0]
+    for n, (model_name, line_x, mean_y) in enumerate(mean_lines):
+        color = colors[n % len(colors)]
         mean_ax.plot(line_x, mean_y, linewidth=1.2, label=model_name, color=color)
     mean_ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
+    mean_ax.set_ylim(*mean_ylim)
     mean_ax.set_ylabel(f"mean\n{response_cell_type}")
     mean_ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
 
@@ -276,7 +283,7 @@ def plot_psi_radar_profile(
         )
         mean_lines.append((model_name, line_x, mean_y))
     all_mean_y = torch.cat([line[2] for line in mean_lines if line[2].numel()])
-    mean_limits = response_limits(all_mean_y)
+    mean_limits = padded_limits(all_mean_y)
 
     fig, axes = plt.subplots(
         3,
