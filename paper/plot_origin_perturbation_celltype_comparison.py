@@ -104,6 +104,16 @@ def profile_xy(panel, values, origin_mask, *, values_are_orientation=False):
     return x[finite], y[finite]
 
 
+def aggregate_profile_lines(xs, ys):
+    unique_x = torch.unique(xs).sort().values
+    mean_y, median_y = [], []
+    for value in unique_x:
+        selected = ys[xs == value]
+        mean_y.append(selected.mean())
+        median_y.append(selected.median())
+    return unique_x, torch.stack(mean_y), torch.stack(median_y)
+
+
 def plot_scatter_profile(
     x,
     responses,
@@ -156,10 +166,21 @@ def plot_scatter_profile(
         ax = axes[n, 0]
         color = colors[n % len(colors)]
         ax.scatter(xs, ys, s=5, alpha=0.55, linewidths=0, color=color)
+        line_x, mean_y, median_y = aggregate_profile_lines(xs, ys)
+        ax.plot(line_x, mean_y, color="black", linewidth=1.2, label="mean")
+        ax.plot(
+            line_x,
+            median_y,
+            color="black",
+            linestyle="--",
+            linewidth=1.2,
+            label="median",
+        )
         ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
         ax.set_xlim(*xlim)
         ax.set_ylim(*ylim)
         ax.set_ylabel(f"{model_name}\n{response_cell_type}")
+        ax.legend(loc="upper right", frameon=False)
 
     axes[0, 0].set_title(title)
     axes[-1, 0].set_xlabel(xlabel)
