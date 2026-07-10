@@ -73,69 +73,96 @@ def response_panel(dr, cell_idx, perturb_idx):
     return panel
 
 
-def plot_orientation_preference_profile(
-    x, responses, response_cell_type, perturb_idx, title, out, dpi
-):
-    rel_ori, _, _, origin_mask = grid_metadata(x, perturb_idx)
-    cell_types = list(x["cell_type"].categories)
-    cell_idx = cell_types.index(response_cell_type)
+def padded_limits(values, *, lower_bound=None):
+    values = torch.as_tensor(values)
+    finite = values[torch.isfinite(values)]
+    if finite.numel() == 0:
+        return (0.0, 1.0)
 
-    fig, ax = plt.subplots(figsize=(5.8, 3.6), constrained_layout=True)
-    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
-    for n, (model_name, dr) in enumerate(responses.items()):
-        panel = response_panel(dr, cell_idx, perturb_idx)
-        selected = panel[~origin_mask, :]
-        y = torch.nanmean(selected, dim=0)
-        y_min = torch.nan_to_num(selected, nan=float("inf")).min(dim=0).values
-        y_max = torch.nan_to_num(selected, nan=float("-inf")).max(dim=0).values
-        color = colors[n % len(colors)]
-        ax.plot(rel_ori, y, marker="o", linewidth=1.4, label=model_name, color=color)
-        if selected.shape[0] > 1:
-            ax.fill_between(rel_ori, y_min, y_max, color=color, alpha=0.12, linewidth=0)
-
-    ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
-    ax.set_xlabel("Preferred orientation difference (deg)")
-    ax.set_ylabel(f"{response_cell_type} response")
-    ax.set_title(title)
-    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out, dpi=dpi, bbox_inches="tight")
-    return fig
+    vmin = float(finite.min())
+    vmax = float(finite.max())
+    if vmin == vmax:
+        pad = 1.0 if vmin == 0.0 else abs(vmin) * 0.05
+    else:
+        pad = (vmax - vmin) * 0.05
+    lower = vmin - pad
+    if lower_bound is not None:
+        lower = lower_bound
+    return (lower, vmax + pad)
 
 
-def plot_grouped_space_profile(
-    x, responses, response_cell_type, perturb_idx, values, xlabel, title, out, dpi
+def profile_xy(panel, values, origin_mask, *, values_are_orientation=False):
+    selected = panel[~origin_mask, :]
+    if values_are_orientation:
+        x = values.expand_as(selected)
+    else:
+        x = values[~origin_mask].unsqueeze(-1).expand_as(selected)
+
+    x = x.reshape(-1)
+    y = selected.reshape(-1)
+    finite = torch.isfinite(x) & torch.isfinite(y)
+    return x[finite], y[finite]
+
+
+def plot_scatter_profile(
+    x,
+    responses,
+    response_cell_type,
+    perturb_idx,
+    values,
+    xlabel,
+    title,
+    out,
+    dpi,
+    *,
+    values_are_orientation=False,
+    x_lower_bound=None,
 ):
     _, _, _, origin_mask = grid_metadata(x, perturb_idx)
     cell_types = list(x["cell_type"].categories)
     cell_idx = cell_types.index(response_cell_type)
-    groups = torch.unique(values[~origin_mask]).sort().values
 
-    fig, ax = plt.subplots(figsize=(5.8, 3.6), constrained_layout=True)
-    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
-    for n, (model_name, dr) in enumerate(responses.items()):
+    points = []
+    for model_name, dr in responses.items():
         panel = response_panel(dr, cell_idx, perturb_idx)
+        points.append(
+            (
+                model_name,
+                *profile_xy(
+                    panel,
+                    values,
+                    origin_mask,
+                    values_are_orientation=values_are_orientation,
+                ),
+            )
+        )
 
-        y, y_min, y_max = [], [], []
-        for value in groups:
-            mask = (values - value).abs() <= 1.0e-5
-            selected = panel[mask, :].reshape(-1)
-            y.append(torch.nanmean(selected))
-            y_min.append(torch.nan_to_num(selected, nan=float("inf")).min())
-            y_max.append(torch.nan_to_num(selected, nan=float("-inf")).max())
+    all_x = torch.cat([point[1] for point in points if point[1].numel()])
+    all_y = torch.cat([point[2] for point in points if point[2].numel()])
+    xlim = padded_limits(all_x, lower_bound=x_lower_bound)
+    ylim = padded_limits(all_y)
 
-        y = torch.stack(y)
-        y_min = torch.stack(y_min)
-        y_max = torch.stack(y_max)
+    fig, axes = plt.subplots(
+        len(points),
+        1,
+        figsize=(5.8, 1.45 * len(points)),
+        sharex=True,
+        sharey=True,
+        constrained_layout=True,
+        squeeze=False,
+    )
+    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    for n, (model_name, xs, ys) in enumerate(points):
+        ax = axes[n, 0]
         color = colors[n % len(colors)]
-        ax.plot(groups, y, marker="o", linewidth=1.4, label=model_name, color=color)
-        ax.fill_between(groups, y_min, y_max, color=color, alpha=0.12, linewidth=0)
+        ax.scatter(xs, ys, s=5, alpha=0.55, linewidths=0, color=color)
+        ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
+        ax.set_xlim(*xlim)
+        ax.set_ylim(*ylim)
+        ax.set_ylabel(f"{model_name}\n{response_cell_type}")
 
-    ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(f"{response_cell_type} response")
-    ax.set_title(title)
-    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
+    axes[0, 0].set_title(title)
+    axes[-1, 0].set_xlabel(xlabel)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=dpi, bbox_inches="tight")
     return fig
@@ -178,7 +205,7 @@ def main():
             x = make_grid(args.N_space, args.N_ori, args.space_extent, CELL_TYPES)
             perturb_idx = perturb_origin_horizontal(x, perturb_cell_type, args.dh)
             responses = compute_responses(state, x, seed)
-            _, distance, psi, _ = grid_metadata(x, perturb_idx)
+            rel_ori, distance, psi, _ = grid_metadata(x, perturb_idx)
 
             for response_cell_type in CELL_TYPES:
                 out = (
@@ -203,7 +230,7 @@ def main():
                         "_over_distance.pdf"
                     )
                 )
-                fig = plot_grouped_space_profile(
+                fig = plot_scatter_profile(
                     x,
                     responses,
                     response_cell_type,
@@ -216,6 +243,7 @@ def main():
                     ),
                     out,
                     args.dpi,
+                    x_lower_bound=0.0,
                 )
                 plt.close(fig)
                 print(f"Saved {out} using fit {fit}.")
@@ -227,17 +255,20 @@ def main():
                         "_over_orientation.pdf"
                     )
                 )
-                fig = plot_orientation_preference_profile(
+                fig = plot_scatter_profile(
                     x,
                     responses,
                     response_cell_type,
                     perturb_idx,
+                    rel_ori,
+                    "Preferred orientation difference (deg)",
                     (
                         f"perturb {perturb_cell_type}, {response_cell_type} response, "
                         "response over preferred orientation"
                     ),
                     out,
                     args.dpi,
+                    values_are_orientation=True,
                 )
                 plt.close(fig)
                 print(f"Saved {out} using fit {fit}.")
@@ -249,7 +280,7 @@ def main():
                         "_over_psi.pdf"
                     )
                 )
-                fig = plot_grouped_space_profile(
+                fig = plot_scatter_profile(
                     x,
                     responses,
                     response_cell_type,
