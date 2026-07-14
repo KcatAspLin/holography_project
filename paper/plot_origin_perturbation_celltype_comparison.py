@@ -12,7 +12,6 @@ from plot_origin_perturbation_comparison import (
     make_model,
     perturb_origin_horizontal,
     plot_responses,
-    response,
     sorted_fit_paths,
 )
 
@@ -42,11 +41,62 @@ def validate_args(parser, args):
         )
 
 
+def baseline_activity(model, x):
+    with torch.inference_mode():
+        baseline = model.f(model.vf).detach().cpu()
+
+    if baseline.ndim == 0:
+        return torch.full(x.shape, float(baseline), dtype=baseline.dtype)
+
+    if baseline.numel() == len(x["cell_type"].categories):
+        cell_idx = x["cell_type"].detach().cpu().to(torch.long)
+        return baseline.reshape(-1)[cell_idx]
+
+    return baseline.broadcast_to(x.shape).detach().cpu()
+
+
+def activity_difference(model, x):
+    with torch.inference_mode():
+        out = model(x.double(), output="response", ndim=x.ndim, to_dataframe=False)
+    response_change = out["dr"].detach().cpu()
+    baseline = baseline_activity(model, x)
+    perturbed = baseline + response_change
+    return perturbed - baseline
+
+
 def compute_responses(state, x, seed):
     return {
-        label: response(make_model(state, model_kwargs, seed=seed), x)
+        label: activity_difference(make_model(state, model_kwargs, seed=seed), x)
         for label, model_kwargs in MODEL_VARIANTS
     }
+
+
+def perturbation_sign(dh):
+    if dh > 0:
+        return "positive"
+    if dh < 0:
+        return "negative"
+    return "zero"
+
+
+def write_perturbation_note(seed_dir, args, fit, seed):
+    seed_dir.mkdir(parents=True, exist_ok=True)
+    sign = perturbation_sign(args.dh)
+    note = (
+        f"fit={fit}\n"
+        f"seed={seed}\n"
+        f"dh={args.dh:g}\n"
+        f"dh_sign={sign}\n"
+        "baseline_activity=model.f(model.vf)\n"
+        "perturbed_activity=baseline_activity+model_response\n"
+        "plotted_value=perturbed_activity-baseline_activity\n"
+        "matrix_mode_note=model_response solves (I-W)dr=dh, so this equals dr.\n"
+    )
+    (seed_dir / "perturbation_metadata.txt").write_text(note)
+    print(
+        f"Perturbation dh={args.dh:g} ({sign}); "
+        f"wrote {seed_dir / 'perturbation_metadata.txt'}."
+    )
 
 
 def grid_metadata(x, perturb_idx):
@@ -395,6 +445,7 @@ def main():
     for seed in seeds:
         torch.manual_seed(seed)
         seed_dir = Path("results") / args.experiment_name / f"seed_{seed}"
+        write_perturbation_note(seed_dir, args, fit, seed)
 
         for perturb_cell_type in CELL_TYPES:
             x = make_grid(args.N_space, args.N_ori, args.space_extent, CELL_TYPES)

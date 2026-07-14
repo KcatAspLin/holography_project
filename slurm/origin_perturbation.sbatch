@@ -15,8 +15,10 @@ N_SPACE_Y="${N_SPACE_Y:-32}"
 N_ORI="${N_ORI:-8}"
 FIT_INDEX="${FIT_INDEX:-0}"
 EXPERIMENT_NAME="${EXPERIMENT_NAME:-}"
+DH="${DH:-10000.0}"
 SEED="${SEED:-0}"
 MAX_NEURONS="${MAX_NEURONS:-60000}"
+DH_SIGN="$(awk -v dh="$DH" 'BEGIN { if (dh > 0) print "positive"; else if (dh < 0) print "negative"; else print "zero" }')"
 
 case "$SPATIAL_GRID" in
   cartesian)
@@ -64,6 +66,8 @@ echo "N_SPACE_Y=$N_SPACE_Y"
 echo "N_ORI=$N_ORI"
 echo "FIT_INDEX=$FIT_INDEX"
 echo "EXPERIMENT_NAME=$EXPERIMENT_NAME"
+echo "DH=$DH"
+echo "DH_SIGN=$DH_SIGN"
 echo "SEED=$SEED"
 echo "MAX_NEURONS=$MAX_NEURONS"
 echo "Python: $(command -v python)"
@@ -103,6 +107,7 @@ cmd=(
   --N-ori "$N_ORI" \
   --fit-index "$FIT_INDEX" \
   --experiment-name "$EXPERIMENT_NAME" \
+  --dh "$DH" \
   --seed "$SEED" \
   --max-neurons "$MAX_NEURONS"
 )

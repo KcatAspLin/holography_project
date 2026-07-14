@@ -196,6 +196,7 @@ logs/
 # Miniforge
 Miniforge3-Linux-x86_64.sh
 *.sh
+!scripts/activate_env.sh
 *.tar.gz
 *.zip
 *.pt

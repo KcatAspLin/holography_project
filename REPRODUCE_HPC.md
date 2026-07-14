@@ -206,6 +206,7 @@ N_SPACE_Y=16 \
 N_ORI=8 \
 FIT_INDEX=0 \
 EXPERIMENT_NAME=origin_horizontal_perturbation_polar \
+DH=10000.0 \
 SEED=0 \
 MAX_NEURONS=50000 \
 sbatch --time=04:00:00 --cpus-per-task=8 --mem=128G slurm/origin_perturbation.sbatch
@@ -215,6 +216,11 @@ For the polar script, `--N-space N_RADIAL N_ANGLE` means one origin point plus
 `N_RADIAL - 1` radial rings with `N_ANGLE` points per ring. The model still
 receives 2D Euclidean `space = (r cos alpha, r sin alpha)` coordinates, while
 the spatial response panels are plotted as scatter plots over the disk.
+
+Both Cartesian and polar scripts plot `perturbed_activity - baseline_activity`.
+For these matrix-mode runs, the baseline is `model.f(model.vf)` and the response
+solve already returns that activity difference. Each seed output directory writes
+`perturbation_metadata.txt`, recording `dh`, its sign, and the plotted quantity.
 
 You can override the grid, fit, experiment name, seed, or dense-matrix safety
 limit at submit time:
