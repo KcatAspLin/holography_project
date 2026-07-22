@@ -200,6 +200,108 @@ def plot_responses(x, responses, cell_type, perturb_idx, out, dpi, heatmap_N_spa
     return fig
 
 
+def model_slug(model_name):
+    return "_".join(
+        "".join(ch.lower() if ch.isalnum() else " " for ch in model_name).split()
+    )
+
+
+def plot_response_strength_heatmap(
+    x,
+    model_name,
+    response_items,
+    cell_type,
+    out,
+    dpi,
+    heatmap_N_space=None,
+):
+    space_x = x["space"][0, :, 0, 0, 0].detach().cpu()
+    space_y = x["space"][0, 0, :, 0, 1].detach().cpu()
+    ori = x["ori"][0, 0, 0, :].tensor.squeeze(-1).detach().cpu()
+    cell_types = list(x["cell_type"].categories)
+    cell_idx = cell_types.index(cell_type)
+
+    _, _, first_perturb_idx = response_items[0]
+    xs, ys = heatmap_slices(
+        first_perturb_idx, (len(space_x), len(space_y)), heatmap_N_space
+    )
+    plot_space_x = space_x[xs]
+    plot_space_y = space_y[ys]
+
+    panels = []
+    for dh, dr, perturb_idx in response_items:
+        panel = response_panel_for_heatmap(dr, cell_idx, perturb_idx)
+        panels.append((dh, panel[xs, ys, :]))
+
+    finite_parts = [
+        panel[torch.isfinite(panel)].reshape(-1)
+        for _, panel in panels
+        if torch.isfinite(panel).any()
+    ]
+    finite_values = torch.cat(finite_parts) if finite_parts else torch.tensor([])
+    vmin = float(finite_values.min()) if finite_values.numel() else 0.0
+    vmax = float(finite_values.max()) if finite_values.numel() else 1.0
+    if vmin == vmax:
+        vmax = vmin + 1.0
+    norm = colors.Normalize(vmin=vmin, vmax=vmax)
+    cmap = plt.get_cmap("viridis").copy()
+    cmap.set_bad("white")
+
+    nrows, ncols = len(panels), len(ori)
+    fig, axes = plt.subplots(
+        nrows,
+        ncols,
+        figsize=(1.65 * ncols, 1.7 * nrows),
+        sharex=True,
+        sharey=True,
+        constrained_layout=True,
+        squeeze=False,
+    )
+
+    extent = [
+        float(plot_space_x.min()),
+        float(plot_space_x.max()),
+        float(plot_space_y.min()),
+        float(plot_space_y.max()),
+    ]
+    image = None
+    for row, (dh, panel) in enumerate(panels):
+        for col, theta in enumerate(ori):
+            ax = axes[row, col]
+            image = ax.imshow(
+                panel[:, :, col].T,
+                origin="lower",
+                extent=extent,
+                cmap=cmap,
+                norm=norm,
+                interpolation="nearest",
+                aspect="equal",
+            )
+            if row == 0:
+                ax.set_title(f"{float(theta):g} deg")
+            if col == 0:
+                ax.set_ylabel(f"dh={dh:g}\ny (um)")
+            if row == nrows - 1:
+                ax.set_xlabel("x (um)")
+            ax.axhline(0, color="black", linewidth=0.25, alpha=0.4)
+            ax.axvline(0, color="black", linewidth=0.25, alpha=0.4)
+
+    fig.suptitle(model_name)
+    cbar = fig.colorbar(image, ax=axes, shrink=0.72)
+    cbar.set_label(f"{cell_type} perturbed - baseline activity")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=dpi, bbox_inches="tight")
+    return fig
+
+
+def response_panel_for_heatmap(dr, cell_idx, perturb_idx):
+    panel = dr[cell_idx].clone()
+    perturb_cell_idx, ix, iy, iori = perturb_idx
+    if cell_idx == perturb_cell_idx:
+        panel[ix, iy, iori] = torch.nan
+    return panel
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -216,6 +318,13 @@ def main():
     parser.add_argument("--cell-type", choices=["PYR", "PV"], default="PYR")
     parser.add_argument("--perturb-cell-type", choices=["PYR", "PV"], default="PYR")
     parser.add_argument("--dh", type=float, default=10000.0)
+    parser.add_argument(
+        "--dh-values",
+        type=float,
+        nargs="+",
+        default=(-10000.0, -5000.0, 0.0, 5000.0, 10000.0),
+        help="Perturbation strengths used as heatmap rows.",
+    )
     parser.add_argument("--max-neurons", type=int, default=60000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--seeds", type=int, nargs="+")
@@ -228,6 +337,8 @@ def main():
         parser.error("--N-space values must be even so the grid contains the origin.")
     if any(N <= 0 for N in args.heatmap_N_space):
         parser.error("--heatmap-N-space values must be positive.")
+    if not args.dh_values:
+        parser.error("--dh-values must contain at least one perturbation strength.")
     if args.N_ori % 2:
         parser.error("--N-ori must be even so the grid contains horizontal ori=0.")
     if args.fit is not None and args.fit_index != 0:
@@ -248,24 +359,34 @@ def main():
     set_rcParams()
     for seed in seeds:
         torch.manual_seed(seed)
-        x = make_grid(args.N_space, args.N_ori, args.space_extent, ["PYR", "PV"])
-        perturb_idx = perturb_origin_horizontal(x, args.perturb_cell_type, args.dh)
-        responses = {
-            label: response(make_model(state, model_kwargs, seed=seed), x)
-            for label, model_kwargs in MODEL_VARIANTS
-        }
-        out = Path("results") / args.experiment_name / f"seed_{seed}" / args.out.name
-        fig = plot_responses(
-            x,
-            responses,
-            args.cell_type,
-            perturb_idx,
-            out,
-            args.dpi,
-            args.heatmap_N_space,
-        )
-        plt.close(fig)
-        print(f"Saved {out} using fit {fit}.")
+        heatmap_x = None
+        heatmap_items = {model_name: [] for model_name, _ in MODEL_VARIANTS}
+        for dh in args.dh_values:
+            x = make_grid(args.N_space, args.N_ori, args.space_extent, ["PYR", "PV"])
+            perturb_idx = perturb_origin_horizontal(x, args.perturb_cell_type, dh)
+            responses = {
+                label: response(make_model(state, model_kwargs, seed=seed), x)
+                for label, model_kwargs in MODEL_VARIANTS
+            }
+            if heatmap_x is None:
+                heatmap_x = x
+            for model_name, dr in responses.items():
+                heatmap_items[model_name].append((dh, dr, perturb_idx))
+
+        seed_dir = Path("results") / args.experiment_name / f"seed_{seed}"
+        for model_name, items in heatmap_items.items():
+            out = seed_dir / f"{args.out.stem}_{model_slug(model_name)}{args.out.suffix}"
+            fig = plot_response_strength_heatmap(
+                heatmap_x,
+                model_name,
+                items,
+                args.cell_type,
+                out,
+                args.dpi,
+                args.heatmap_N_space,
+            )
+            plt.close(fig)
+            print(f"Saved {out} using fit {fit}.")
 
 
 if __name__ == "__main__":

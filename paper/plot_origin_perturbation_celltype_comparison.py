@@ -10,8 +10,9 @@ from plot_origin_perturbation_comparison import (
     load_model_state,
     make_grid,
     make_model,
+    model_slug,
     perturb_origin_horizontal,
-    plot_responses,
+    plot_response_strength_heatmap,
     sorted_fit_paths,
 )
 
@@ -28,6 +29,8 @@ def validate_args(parser, args):
         parser.error("--N-space values must be even so the grid contains the origin.")
     if any(N <= 0 for N in args.heatmap_N_space):
         parser.error("--heatmap-N-space values must be positive.")
+    if not args.dh_values:
+        parser.error("--dh-values must contain at least one perturbation strength.")
     if args.N_ori % 2:
         parser.error("--N-ori must be even so the grid contains horizontal ori=0.")
     if args.fit is not None and args.fit_index != 0:
@@ -89,6 +92,9 @@ def write_perturbation_note(seed_dir, args, fit, seed):
         f"seed={seed}\n"
         f"dh={args.dh:g}\n"
         f"dh_sign={sign}\n"
+        f"dh_values={' '.join(f'{dh:g}' for dh in args.dh_values)}\n"
+        f"dh_value_signs={' '.join(perturbation_sign(dh) for dh in args.dh_values)}\n"
+        "heatmap_layout=one file per model; rows=dh_values; columns=orientation\n"
         "baseline_activity=model.f(model.vf)\n"
         "perturbed_activity=baseline_activity+model_response\n"
         "plotted_value=perturbed_activity-baseline_activity\n"
@@ -429,6 +435,13 @@ def main():
     parser.add_argument("--N-ori", type=int, default=8)
     parser.add_argument("--space-extent", type=float, default=400.0)
     parser.add_argument("--dh", type=float, default=10000.0)
+    parser.add_argument(
+        "--dh-values",
+        type=float,
+        nargs="+",
+        default=(-10000.0, -5000.0, 0.0, 5000.0, 10000.0),
+        help="Perturbation strengths used as heatmap rows.",
+    )
     parser.add_argument("--max-neurons", type=int, default=60000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--seeds", type=int, nargs="+")
@@ -456,27 +469,42 @@ def main():
         write_perturbation_note(seed_dir, args, fit, seed)
 
         for perturb_cell_type in CELL_TYPES:
+            heatmap_x = None
+            heatmap_items = {model_name: [] for model_name, _ in MODEL_VARIANTS}
+            for dh in args.dh_values:
+                x = make_grid(args.N_space, args.N_ori, args.space_extent, CELL_TYPES)
+                perturb_idx = perturb_origin_horizontal(x, perturb_cell_type, dh)
+                responses = compute_responses(state, x, seed)
+                if heatmap_x is None:
+                    heatmap_x = x
+                for model_name, dr in responses.items():
+                    heatmap_items[model_name].append((dh, dr, perturb_idx))
+
             x = make_grid(args.N_space, args.N_ori, args.space_extent, CELL_TYPES)
             perturb_idx = perturb_origin_horizontal(x, perturb_cell_type, args.dh)
             responses = compute_responses(state, x, seed)
             rel_ori, distance, psi, _ = grid_metadata(x, perturb_idx)
 
             for response_cell_type in CELL_TYPES:
-                out = (
-                    seed_dir
-                    / f"perturb_{perturb_cell_type}_response_{response_cell_type}.pdf"
-                )
-                fig = plot_responses(
-                    x,
-                    responses,
-                    response_cell_type,
-                    perturb_idx,
-                    out,
-                    args.dpi,
-                    args.heatmap_N_space,
-                )
-                plt.close(fig)
-                print(f"Saved {out} using fit {fit}.")
+                for model_name, items in heatmap_items.items():
+                    out = (
+                        seed_dir
+                        / (
+                            f"perturb_{perturb_cell_type}_response_{response_cell_type}"
+                            f"_{model_slug(model_name)}.pdf"
+                        )
+                    )
+                    fig = plot_response_strength_heatmap(
+                        heatmap_x,
+                        model_name,
+                        items,
+                        response_cell_type,
+                        out,
+                        args.dpi,
+                        args.heatmap_N_space,
+                    )
+                    plt.close(fig)
+                    print(f"Saved {out} using fit {fit}.")
 
                 out = (
                     seed_dir

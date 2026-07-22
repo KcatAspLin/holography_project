@@ -172,6 +172,7 @@ python paper/plot_origin_perturbation_celltype_comparison.py \
   --fit-index 0 \
   --experiment-name origin_horizontal_perturbation \
   --dh 10000.0 \
+  --dh-values -10000.0 -5000.0 0.0 5000.0 10000.0 \
   --seed 0 \
   --max-neurons 60000 \
   --skip-psi
@@ -195,10 +196,8 @@ python paper/plot_origin_perturbation_polar_celltype_comparison.py \
 Expected spatial-response outputs:
 
 ```text
-results/origin_horizontal_perturbation/seed_0/perturb_PYR_response_PYR.pdf
-results/origin_horizontal_perturbation/seed_0/perturb_PYR_response_PV.pdf
-results/origin_horizontal_perturbation/seed_0/perturb_PV_response_PYR.pdf
-results/origin_horizontal_perturbation/seed_0/perturb_PV_response_PV.pdf
+results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_original_paper_gamma_0.pdf
+results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_direct_mapping_gamma_1.pdf
 ```
 
 The script also writes profile outputs for each perturb/response combination:
@@ -209,9 +208,13 @@ results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPON
 results/origin_horizontal_perturbation_polar_psi/seed_0/perturb_<PERTURB>_response_<RESPONSE>_over_psi.pdf
 ```
 
-The heatmap figures are computed from the full simulation grid but cropped to a
-central `--heatmap-N-space 16 16` window for plotting. The perturbation heatmaps
-use the `viridis` colormap.
+The heatmap figures are split into separate files for the original model and
+the direct mapping model. They are computed from the full simulation grid but
+cropped to a central `--heatmap-N-space 16 16` window for plotting. Rows are
+the perturbation strengths from `--dh-values`, columns are the orientation
+selectivity bins, and colors show `perturbed_activity - baseline_activity` with
+the `viridis` colormap. The default heatmap strengths are `-10000, -5000, 0,
+5000, 10000`, so the sweep includes negative, zero, and positive perturbations.
 
 The distance and preferred-orientation profile figures use two vertically
 aligned scatter subplots plus a final mean-response subplot, with shared axis
@@ -282,6 +285,7 @@ FIT_INDEX=0 \
 EXPERIMENT_NAME=origin_horizontal_perturbation \
 PSI_EXPERIMENT_NAME=origin_horizontal_perturbation_polar_psi \
 DH=10000.0 \
+DH_VALUES="-10000.0 -5000.0 0.0 5000.0 10000.0" \
 SEED=0 \
 MAX_NEURONS=50000 \
 sbatch --time=04:00:00 --cpus-per-task=8 --mem=128G slurm/origin_perturbation.sbatch
@@ -290,7 +294,8 @@ sbatch --time=04:00:00 --cpus-per-task=8 --mem=128G slurm/origin_perturbation.sb
 Both Cartesian and polar scripts plot `perturbed_activity - baseline_activity`.
 For these matrix-mode runs, the baseline is `model.f(model.vf)` and the response
 solve already returns that activity difference. Each seed output directory writes
-`perturbation_metadata.txt`, recording `dh`, its sign, and the plotted quantity.
+`perturbation_metadata.txt`, recording `dh`, `dh_values`, their signs, and the
+plotted quantity.
 
 You can override the grid, fit, experiment name, seed, or dense-matrix safety
 limit at submit time:
