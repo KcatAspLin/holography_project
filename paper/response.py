@@ -527,6 +527,7 @@ def main():
         choices=["symmetric", "presynaptic"],
         default="symmetric",
     )
+    parser.add_argument("--psi-gamma", type=float, default=1.0)
     parser.add_argument("--use-visual-field-tuning", action="store_true")
     parser.add_argument("--psi", type=float)
     parser.add_argument("--visual-field-map", type=str)
@@ -578,6 +579,7 @@ def main():
         "use_psi": use_psi,
         "psi_mode": args.psi_mode,
         "psi_formula": args.psi_formula,
+        "psi_gamma": args.psi_gamma,
         "max_neurons": args.max_neurons,
     }
     if args.psi is not None:

@@ -9,31 +9,22 @@
 set -euo pipefail
 
 ENV_NAME="${ENV_NAME:-chau-2024-exact}"
-SPATIAL_GRID="${SPATIAL_GRID:-cartesian}"
 N_SPACE_X="${N_SPACE_X:-32}"
 N_SPACE_Y="${N_SPACE_Y:-32}"
+PSI_N_RADIAL="${PSI_N_RADIAL:-$N_SPACE_X}"
+PSI_N_ANGLE="${PSI_N_ANGLE:-$N_SPACE_Y}"
 N_ORI="${N_ORI:-8}"
 FIT_INDEX="${FIT_INDEX:-0}"
-EXPERIMENT_NAME="${EXPERIMENT_NAME:-}"
+EXPERIMENT_NAME="${EXPERIMENT_NAME:-origin_horizontal_perturbation}"
+PSI_EXPERIMENT_NAME="${PSI_EXPERIMENT_NAME:-${EXPERIMENT_NAME}_polar_psi}"
 DH="${DH:-10000.0}"
 SEED="${SEED:-0}"
 MAX_NEURONS="${MAX_NEURONS:-60000}"
+RUN_CARTESIAN="${RUN_CARTESIAN:-1}"
+RUN_POLAR_PSI="${RUN_POLAR_PSI:-1}"
 DH_SIGN="$(awk -v dh="$DH" 'BEGIN { if (dh > 0) print "positive"; else if (dh < 0) print "negative"; else print "zero" }')"
-
-case "$SPATIAL_GRID" in
-  cartesian)
-    SCRIPT="paper/plot_origin_perturbation_celltype_comparison.py"
-    EXPERIMENT_NAME="${EXPERIMENT_NAME:-origin_horizontal_perturbation}"
-    ;;
-  polar)
-    SCRIPT="paper/plot_origin_perturbation_polar_celltype_comparison.py"
-    EXPERIMENT_NAME="${EXPERIMENT_NAME:-origin_horizontal_perturbation_polar}"
-    ;;
-  *)
-    echo "ERROR: SPATIAL_GRID must be 'cartesian' or 'polar', got '$SPATIAL_GRID'." >&2
-    exit 2
-    ;;
-esac
+CARTESIAN_SCRIPT="paper/plot_origin_perturbation_celltype_comparison.py"
+POLAR_SCRIPT="paper/plot_origin_perturbation_polar_celltype_comparison.py"
 
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
 mkdir -p logs
@@ -59,17 +50,22 @@ echo "Host: $(hostname)"
 echo "Job: ${SLURM_JOB_ID:-none}"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
 echo "ENV_NAME=$ENV_NAME"
-echo "SPATIAL_GRID=$SPATIAL_GRID"
-echo "SCRIPT=$SCRIPT"
+echo "CARTESIAN_SCRIPT=$CARTESIAN_SCRIPT"
+echo "POLAR_SCRIPT=$POLAR_SCRIPT"
 echo "N_SPACE_X=$N_SPACE_X"
 echo "N_SPACE_Y=$N_SPACE_Y"
+echo "PSI_N_RADIAL=$PSI_N_RADIAL"
+echo "PSI_N_ANGLE=$PSI_N_ANGLE"
 echo "N_ORI=$N_ORI"
 echo "FIT_INDEX=$FIT_INDEX"
 echo "EXPERIMENT_NAME=$EXPERIMENT_NAME"
+echo "PSI_EXPERIMENT_NAME=$PSI_EXPERIMENT_NAME"
 echo "DH=$DH"
 echo "DH_SIGN=$DH_SIGN"
 echo "SEED=$SEED"
 echo "MAX_NEURONS=$MAX_NEURONS"
+echo "RUN_CARTESIAN=$RUN_CARTESIAN"
+echo "RUN_POLAR_PSI=$RUN_POLAR_PSI"
 echo "Python: $(command -v python)"
 
 python - <<'PY'
@@ -78,7 +74,7 @@ import sys
 
 missing = [
     name
-    for name in ("hyclib", "matplotlib", "torch")
+    for name in ("hyclib", "matplotlib", "tdfl", "torch")
     if importlib.util.find_spec(name) is None
 ]
 if missing:
@@ -101,15 +97,32 @@ else
   echo "nvidia-smi not found; continuing without NVIDIA GPU diagnostics."
 fi
 
-cmd=(
-  python "$SCRIPT"
-  --N-space "$N_SPACE_X" "$N_SPACE_Y" \
-  --N-ori "$N_ORI" \
-  --fit-index "$FIT_INDEX" \
-  --experiment-name "$EXPERIMENT_NAME" \
-  --dh "$DH" \
-  --seed "$SEED" \
-  --max-neurons "$MAX_NEURONS"
-)
+if [[ "$RUN_CARTESIAN" == "1" ]]; then
+  cartesian_cmd=(
+    python "$CARTESIAN_SCRIPT"
+    --N-space "$N_SPACE_X" "$N_SPACE_Y"
+    --N-ori "$N_ORI"
+    --fit-index "$FIT_INDEX"
+    --experiment-name "$EXPERIMENT_NAME"
+    --dh "$DH"
+    --seed "$SEED"
+    --max-neurons "$MAX_NEURONS"
+    --skip-psi
+  )
+  "${cartesian_cmd[@]}"
+fi
 
-"${cmd[@]}"
+if [[ "$RUN_POLAR_PSI" == "1" ]]; then
+  polar_cmd=(
+    python "$POLAR_SCRIPT"
+    --N-space "$PSI_N_RADIAL" "$PSI_N_ANGLE"
+    --N-ori "$N_ORI"
+    --fit-index "$FIT_INDEX"
+    --experiment-name "$PSI_EXPERIMENT_NAME"
+    --dh "$DH"
+    --seed "$SEED"
+    --max-neurons "$MAX_NEURONS"
+    --only-psi
+  )
+  "${polar_cmd[@]}"
+fi

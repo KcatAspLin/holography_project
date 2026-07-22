@@ -61,30 +61,17 @@ def perturb_origin_horizontal(x, cell_type, dh):
 
 
 MODEL_VARIANTS = (
-    ("original paper", {}),
     (
-        "direct\ncos(psi-theta) cos(psi-phi)",
-        {"use_psi": True, "psi_mode": "direct_space"},
+        "original paper\ngamma=0",
+        {"use_psi": True, "psi_mode": "direct_space", "psi_gamma": 0.0},
     ),
     (
-        "random iid\ncos(psi-theta) cos(psi-phi)",
-        {"use_psi": True, "psi_mode": "independent"},
+        "direct mapping\ngamma=1",
+        {"use_psi": True, "psi_mode": "direct_space", "psi_gamma": 1.0},
     ),
     (
-        "direct\ncos(phi-theta) cos(psi-phi)",
-        {
-            "use_psi": True,
-            "psi_mode": "direct_space",
-            "psi_formula": "presynaptic",
-        },
-    ),
-    (
-        "random iid\ncos(phi-theta) cos(psi-phi)",
-        {
-            "use_psi": True,
-            "psi_mode": "independent",
-            "psi_formula": "presynaptic",
-        },
+        "random iid psi\ngamma=1",
+        {"use_psi": True, "psi_mode": "independent", "psi_gamma": 1.0},
     ),
 )
 

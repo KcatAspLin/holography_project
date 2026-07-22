@@ -355,6 +355,7 @@ class V1(torch.nn.Module):
         use_psi: bool = False,
         psi_mode: str = "independent",
         psi_formula: str = "symmetric",
+        psi_gamma: float = 1.0,
         use_visual_field_tuning: bool = False,
         psi: float | Tensor | None = None,
         visual_field_map: torch.nn.Module | Sequence | None = None,
@@ -433,6 +434,11 @@ class V1(torch.nn.Module):
                 Which psi-dependent orientation factor to use when use_psi is True.
                 "symmetric" uses cos(psi - theta) * cos(psi - phi). "presynaptic"
                 uses cos(phi - theta) * cos(psi - phi). Defaults to "symmetric".
+            psi_gamma (optional):
+                Interpolation strength for the symmetric psi term after rewriting it
+                as cos(theta - phi) + psi_gamma * f(psi, theta, phi). psi_gamma=0
+                recovers the original orientation tuning and psi_gamma=1 recovers
+                cos(psi - theta) * cos(psi - phi). Defaults to 1.
             use_visual_field_tuning (optional):
                 If True, compute psi from the angle between visual-field receptive-field
                 centers. Legacy alias for psi_mode="visual_field". Defaults to False.
@@ -712,6 +718,7 @@ class V1(torch.nn.Module):
         self.use_psi = use_psi
         self.psi_mode = psi_mode
         self.psi_formula = psi_formula
+        self.psi_gamma = psi_gamma
         self.use_visual_field_tuning = psi_mode == "visual_field"
         if psi is None:
             self.psi = None
@@ -833,6 +840,7 @@ class V1(torch.nn.Module):
                 self.visual_field_map,
                 ["space", "ori"],
                 formula=self.psi_formula,
+                gamma=self.psi_gamma,
                 normalize=True,
             )
         elif self.use_psi and self.psi_mode == "direct_space":
@@ -840,6 +848,7 @@ class V1(torch.nn.Module):
                 kappa_kernel,
                 ["space", "ori"],
                 formula=self.psi_formula,
+                gamma=self.psi_gamma,
                 normalize=True,
             )
         elif self.use_psi:
@@ -848,6 +857,7 @@ class V1(torch.nn.Module):
                 self.psi,
                 "ori",
                 formula=self.psi_formula,
+                gamma=self.psi_gamma,
                 normalize=True,
             )
         else:

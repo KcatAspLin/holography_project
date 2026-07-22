@@ -448,6 +448,7 @@ class PsiTuning(Kernel):
         psi: float | Tensor | None = None,
         *args,
         formula: str = "symmetric",
+        gamma: float = 1.0,
         normalize: bool = False,
         **kwargs,
     ):
@@ -462,6 +463,7 @@ class PsiTuning(Kernel):
         else:
             self.register_buffer("psi", torch.as_tensor(psi), persistent=False)
         self.formula = formula
+        self.gamma = gamma
         self.normalize = normalize
 
     def kernel(self, x_ori: PeriodicTensor, y_ori: PeriodicTensor, kappa: Tensor) -> Tensor:
@@ -476,7 +478,9 @@ class PsiTuning(Kernel):
             psi = self.psi.to(dtype=x_ori.dtype, device=x_ori.device)
             psi = psi * (2 * torch.pi / period)
         if self.formula == "symmetric":
-            out = 1 + 2 * kappa * torch.cos(psi - theta) * torch.cos(psi - phi)
+            base = torch.cos(theta - phi)
+            f = torch.cos(psi - theta) * torch.cos(psi - phi) - base
+            out = 1 + 2 * kappa * (base + self.gamma * f)
         else:
             out = 1 + 2 * kappa * torch.cos(phi - theta) * torch.cos(psi - phi)
         if self.normalize:
@@ -493,6 +497,7 @@ class VisualFieldTuning(Kernel):
         visual_field_map: torch.nn.Module,
         *args,
         formula: str = "symmetric",
+        gamma: float = 1.0,
         normalize: bool = False,
         **kwargs,
     ):
@@ -504,6 +509,7 @@ class VisualFieldTuning(Kernel):
         super().__init__(*args, kernels=(kappa,), **kwargs)
         self.visual_field_map = visual_field_map
         self.formula = formula
+        self.gamma = gamma
         self.normalize = normalize
 
     def kernel(
@@ -522,7 +528,9 @@ class VisualFieldTuning(Kernel):
         theta = x_ori.to_period(2 * torch.pi).tensor.squeeze(-1)
         phi = y_ori.to_period(2 * torch.pi).tensor.squeeze(-1)
         if self.formula == "symmetric":
-            out = 1 + 2 * kappa * torch.cos(psi - theta) * torch.cos(psi - phi)
+            base = torch.cos(theta - phi)
+            f = torch.cos(psi - theta) * torch.cos(psi - phi) - base
+            out = 1 + 2 * kappa * (base + self.gamma * f)
         else:
             out = 1 + 2 * kappa * torch.cos(phi - theta) * torch.cos(psi - phi)
         if self.normalize:
@@ -538,6 +546,7 @@ class DirectSpaceTuning(Kernel):
         kappa: Function,
         *args,
         formula: str = "symmetric",
+        gamma: float = 1.0,
         normalize: bool = False,
         **kwargs,
     ):
@@ -548,6 +557,7 @@ class DirectSpaceTuning(Kernel):
             )
         super().__init__(*args, kernels=(kappa,), **kwargs)
         self.formula = formula
+        self.gamma = gamma
         self.normalize = normalize
 
     def kernel(
@@ -570,7 +580,9 @@ class DirectSpaceTuning(Kernel):
         theta = x_ori.to_period(2 * torch.pi).tensor.squeeze(-1)
         phi = y_ori.to_period(2 * torch.pi).tensor.squeeze(-1)
         if self.formula == "symmetric":
-            out = 1 + 2 * kappa * torch.cos(psi - theta) * torch.cos(psi - phi)
+            base = torch.cos(theta - phi)
+            f = torch.cos(psi - theta) * torch.cos(psi - phi) - base
+            out = 1 + 2 * kappa * (base + self.gamma * f)
         else:
             out = 1 + 2 * kappa * torch.cos(phi - theta) * torch.cos(psi - phi)
         if self.normalize:

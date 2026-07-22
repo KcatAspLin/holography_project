@@ -153,23 +153,40 @@ The code uses CUDA automatically when `torch.cuda.is_available()` is true.
 ## Slurm: Origin Perturbation Comparison
 
 To plot PYR and PV responses to horizontal-preference perturbations of PYR and
-PV neurons at the V1 origin, comparing the paper model with four modified Eq. 8
+PV neurons at the V1 origin, comparing the paper model with two modified Eq. 8
 variants:
 
 ```bash
 sbatch --time=04:00:00 --cpus-per-task=8 --mem=128G slurm/origin_perturbation.sbatch
 ```
 
-The default Slurm script runs:
+The default Slurm script runs the spatial, distance, and preferred-orientation
+plots on a Cartesian grid:
 
 ```bash
 python paper/plot_origin_perturbation_celltype_comparison.py \
-  --N-space 16 16 \
+  --N-space 32 32 \
   --N-ori 8 \
   --fit-index 0 \
   --experiment-name origin_horizontal_perturbation \
+  --dh 10000.0 \
   --seed 0 \
-  --max-neurons 50000
+  --max-neurons 60000 \
+  --skip-psi
+```
+
+It then runs only the response-over-psi plots on a polar disk grid:
+
+```bash
+python paper/plot_origin_perturbation_polar_celltype_comparison.py \
+  --N-space 32 32 \
+  --N-ori 8 \
+  --fit-index 0 \
+  --experiment-name origin_horizontal_perturbation_polar_psi \
+  --dh 10000.0 \
+  --seed 0 \
+  --max-neurons 60000 \
+  --only-psi
 ```
 
 Expected spatial-response outputs:
@@ -186,36 +203,80 @@ The script also writes profile outputs for each perturb/response combination:
 ```text
 results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_over_distance.pdf
 results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_over_orientation.pdf
-results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_over_psi.pdf
+results/origin_horizontal_perturbation_polar_psi/seed_0/perturb_<PERTURB>_response_<RESPONSE>_over_psi.pdf
 ```
 
-The distance and preferred-orientation profile figures use five vertically
-aligned scatter subplots plus a sixth mean-response subplot, with shared axis
+The distance and preferred-orientation profile figures use three vertically
+aligned scatter subplots plus a final mean-response subplot, with shared axis
 limits only for the scatter subplots and a tighter response range for the mean
 subplot. The psi profile figure uses four distance rows and two preferred
 orientation columns, with 0 deg on the left and -90 deg on the right; each
-subplot overlays all five models and shows the mean response over psi with a
+subplot overlays all three models and shows the mean response over psi with a
 shaded min-to-max range for the selected distance and orientation.
 
-To run the same perturbation comparison on a polar spatial grid, use:
+The three model variants are:
+
+```text
+1. original paper, gamma=0:
+   1 + 2 kappa_ab cos(theta_i - phi_j)
+2. direct visual-field mapping, gamma=1:
+   psi_ij comes from the direct 2D spatial offset between neuron i and neuron j
+3. random iid psi, gamma=1:
+   psi_ij is sampled independently and uniformly for each neuron pair ij
+```
+
+The removed variants are the two `cos(phi_j - theta_i) cos(psi_ij - phi_j)`
+models.
+
+For the symmetric psi term, start with the product-to-sum identity:
+
+```text
+cos(psi - theta) cos(psi - phi)
+  = 1/2 [cos((psi - theta) - (psi - phi))
+         + cos((psi - theta) + (psi - phi))]
+  = 1/2 [cos(phi - theta) + cos(2 psi - theta - phi)]
+  = cos(theta - phi)
+    + 1/2 [cos(2 psi - theta - phi) - cos(theta - phi)].
+```
+
+So the rewritten factor is:
+
+```text
+cos(psi - theta) cos(psi - phi)
+  = cos(theta - phi) + gamma f(psi, theta, phi)
+```
+
+with:
+
+```text
+f(psi, theta, phi)
+  = 1/2 [cos(2 psi - theta - phi) - cos(theta - phi)].
+```
+
+Using `gamma=0` gives the original paper model. Using `gamma=1` gives the
+exact `cos(psi - theta) cos(psi - phi)` term.
+
+The polar grid is used only for the response-over-psi plots. `--N-space
+N_RADIAL N_ANGLE` means one origin point plus `N_RADIAL - 1` radial rings with
+`N_ANGLE` points per ring. The model still receives 2D Euclidean `space = (r cos
+alpha, r sin alpha)` coordinates, and the disk radius is `--space-extent / 2`.
+
+To override the Cartesian and polar-psi grid sizes, use:
 
 ```bash
-SPATIAL_GRID=polar \
 N_SPACE_X=16 \
 N_SPACE_Y=16 \
+PSI_N_RADIAL=16 \
+PSI_N_ANGLE=32 \
 N_ORI=8 \
 FIT_INDEX=0 \
-EXPERIMENT_NAME=origin_horizontal_perturbation_polar \
+EXPERIMENT_NAME=origin_horizontal_perturbation \
+PSI_EXPERIMENT_NAME=origin_horizontal_perturbation_polar_psi \
 DH=10000.0 \
 SEED=0 \
 MAX_NEURONS=50000 \
 sbatch --time=04:00:00 --cpus-per-task=8 --mem=128G slurm/origin_perturbation.sbatch
 ```
-
-For the polar script, `--N-space N_RADIAL N_ANGLE` means one origin point plus
-`N_RADIAL - 1` radial rings with `N_ANGLE` points per ring. The model still
-receives 2D Euclidean `space = (r cos alpha, r sin alpha)` coordinates, while
-the spatial response panels are plotted as scatter plots over the disk.
 
 Both Cartesian and polar scripts plot `perturbed_activity - baseline_activity`.
 For these matrix-mode runs, the baseline is `model.f(model.vf)` and the response

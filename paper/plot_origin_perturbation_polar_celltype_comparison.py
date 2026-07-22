@@ -582,6 +582,11 @@ def main():
         "--experiment-name",
         default="origin_horizontal_perturbation_polar_celltypes",
     )
+    parser.add_argument(
+        "--only-psi",
+        action="store_true",
+        help="Only write response-over-psi plots from the polar grid.",
+    )
     parser.add_argument("--dpi", type=int, default=300)
     args = parser.parse_args()
     validate_args(parser, args)
@@ -605,70 +610,71 @@ def main():
             rel_ori, distance, psi, _ = grid_metadata(x, perturb_idx)
 
             for response_cell_type in CELL_TYPES:
-                out = (
-                    seed_dir
-                    / f"perturb_{perturb_cell_type}_response_{response_cell_type}.pdf"
-                )
-                fig = plot_responses_polar(
-                    x,
-                    responses,
-                    response_cell_type,
-                    perturb_idx,
-                    out,
-                    args.dpi,
-                )
-                plt.close(fig)
-                print(f"Saved {out} using fit {fit}.")
-
-                out = (
-                    seed_dir
-                    / (
-                        f"perturb_{perturb_cell_type}_response_{response_cell_type}"
-                        "_over_distance.pdf"
+                if not args.only_psi:
+                    out = (
+                        seed_dir
+                        / f"perturb_{perturb_cell_type}_response_{response_cell_type}.pdf"
                     )
-                )
-                fig = plot_scatter_profile(
-                    x,
-                    responses,
-                    response_cell_type,
-                    perturb_idx,
-                    distance,
-                    "Distance from perturbed neuron (um)",
-                    (
-                        f"perturb {perturb_cell_type}, {response_cell_type} response, "
-                        "response over distance"
-                    ),
-                    out,
-                    args.dpi,
-                    x_lower_bound=0.0,
-                )
-                plt.close(fig)
-                print(f"Saved {out} using fit {fit}.")
-
-                out = (
-                    seed_dir
-                    / (
-                        f"perturb_{perturb_cell_type}_response_{response_cell_type}"
-                        "_over_orientation.pdf"
+                    fig = plot_responses_polar(
+                        x,
+                        responses,
+                        response_cell_type,
+                        perturb_idx,
+                        out,
+                        args.dpi,
                     )
-                )
-                fig = plot_scatter_profile(
-                    x,
-                    responses,
-                    response_cell_type,
-                    perturb_idx,
-                    rel_ori,
-                    "Preferred orientation difference (deg)",
-                    (
-                        f"perturb {perturb_cell_type}, {response_cell_type} response, "
-                        "response over preferred orientation"
-                    ),
-                    out,
-                    args.dpi,
-                    values_are_orientation=True,
-                )
-                plt.close(fig)
-                print(f"Saved {out} using fit {fit}.")
+                    plt.close(fig)
+                    print(f"Saved {out} using fit {fit}.")
+
+                    out = (
+                        seed_dir
+                        / (
+                            f"perturb_{perturb_cell_type}_response_{response_cell_type}"
+                            "_over_distance.pdf"
+                        )
+                    )
+                    fig = plot_scatter_profile(
+                        x,
+                        responses,
+                        response_cell_type,
+                        perturb_idx,
+                        distance,
+                        "Distance from perturbed neuron (um)",
+                        (
+                            f"perturb {perturb_cell_type}, {response_cell_type} response, "
+                            "response over distance"
+                        ),
+                        out,
+                        args.dpi,
+                        x_lower_bound=0.0,
+                    )
+                    plt.close(fig)
+                    print(f"Saved {out} using fit {fit}.")
+
+                    out = (
+                        seed_dir
+                        / (
+                            f"perturb_{perturb_cell_type}_response_{response_cell_type}"
+                            "_over_orientation.pdf"
+                        )
+                    )
+                    fig = plot_scatter_profile(
+                        x,
+                        responses,
+                        response_cell_type,
+                        perturb_idx,
+                        rel_ori,
+                        "Preferred orientation difference (deg)",
+                        (
+                            f"perturb {perturb_cell_type}, {response_cell_type} response, "
+                            "response over preferred orientation"
+                        ),
+                        out,
+                        args.dpi,
+                        values_are_orientation=True,
+                    )
+                    plt.close(fig)
+                    print(f"Saved {out} using fit {fit}.")
 
                 out = (
                     seed_dir

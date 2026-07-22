@@ -433,6 +433,11 @@ def main():
         "--experiment-name",
         default="origin_horizontal_perturbation_celltypes",
     )
+    parser.add_argument(
+        "--skip-psi",
+        action="store_true",
+        help="Skip response-over-psi plots; use the polar script for those profiles.",
+    )
     parser.add_argument("--dpi", type=int, default=300)
     args = parser.parse_args()
     validate_args(parser, args)
@@ -519,29 +524,30 @@ def main():
                 plt.close(fig)
                 print(f"Saved {out} using fit {fit}.")
 
-                out = (
-                    seed_dir
-                    / (
-                        f"perturb_{perturb_cell_type}_response_{response_cell_type}"
-                        "_over_psi.pdf"
+                if not args.skip_psi:
+                    out = (
+                        seed_dir
+                        / (
+                            f"perturb_{perturb_cell_type}_response_{response_cell_type}"
+                            "_over_psi.pdf"
+                        )
                     )
-                )
-                fig = plot_psi_distance_profiles(
-                    x,
-                    responses,
-                    response_cell_type,
-                    perturb_idx,
-                    distance,
-                    psi,
-                    (
-                        f"perturb {perturb_cell_type}, {response_cell_type} response, "
-                        "response over psi"
-                    ),
-                    out,
-                    args.dpi,
-                )
-                plt.close(fig)
-                print(f"Saved {out} using fit {fit}.")
+                    fig = plot_psi_distance_profiles(
+                        x,
+                        responses,
+                        response_cell_type,
+                        perturb_idx,
+                        distance,
+                        psi,
+                        (
+                            f"perturb {perturb_cell_type}, {response_cell_type} response, "
+                            "response over psi"
+                        ),
+                        out,
+                        args.dpi,
+                    )
+                    plt.close(fig)
+                    print(f"Saved {out} using fit {fit}.")
 
 
 if __name__ == "__main__":
