@@ -422,11 +422,18 @@ def plot_responses_polar(x, responses, cell_type, perturb_idx, out, dpi):
         model_name: response_panel(dr, cell_idx, perturb_idx)
         for model_name, dr in responses.items()
     }
-    vmax = max(float(torch.nan_to_num(panel.abs()).max()) for panel in panels.values())
-    if vmax == 0.0:
-        vmax = 1.0
-    norm = colors.TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
-    cmap = plt.get_cmap("coolwarm").copy()
+    finite_parts = [
+        panel[torch.isfinite(panel)].reshape(-1)
+        for panel in panels.values()
+        if torch.isfinite(panel).any()
+    ]
+    finite_values = torch.cat(finite_parts) if finite_parts else torch.tensor([])
+    vmin = float(finite_values.min()) if finite_values.numel() else 0.0
+    vmax = float(finite_values.max()) if finite_values.numel() else 1.0
+    if vmin == vmax:
+        vmax = vmin + 1.0
+    norm = colors.Normalize(vmin=vmin, vmax=vmax)
+    cmap = plt.get_cmap("viridis").copy()
     cmap.set_bad("white")
 
     nrows, ncols = len(responses), len(ori)
@@ -568,14 +575,14 @@ def main():
         "--N-space",
         type=int,
         nargs=2,
-        default=(16, 16),
+        default=(32, 32),
         metavar=("N_RADIAL", "N_ANGLE"),
         help="Polar grid resolution: radial samples including origin, angular samples per ring.",
     )
     parser.add_argument("--N-ori", type=int, default=8)
-    parser.add_argument("--space-extent", type=float, default=200.0)
+    parser.add_argument("--space-extent", type=float, default=400.0)
     parser.add_argument("--dh", type=float, default=10000.0)
-    parser.add_argument("--max-neurons", type=int, default=50000)
+    parser.add_argument("--max-neurons", type=int, default=60000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--seeds", type=int, nargs="+")
     parser.add_argument(

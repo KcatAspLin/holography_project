@@ -26,6 +26,8 @@ def angle_diff_deg(x, y):
 def validate_args(parser, args):
     if any(N % 2 for N in args.N_space):
         parser.error("--N-space values must be even so the grid contains the origin.")
+    if any(N <= 0 for N in args.heatmap_N_space):
+        parser.error("--heatmap-N-space values must be positive.")
     if args.N_ori % 2:
         parser.error("--N-ori must be even so the grid contains horizontal ori=0.")
     if args.fit is not None and args.fit_index != 0:
@@ -422,11 +424,12 @@ def main():
     )
     parser.add_argument("--fit", type=Path)
     parser.add_argument("--fit-index", type=int, default=0)
-    parser.add_argument("--N-space", type=int, nargs=2, default=(16, 16))
+    parser.add_argument("--N-space", type=int, nargs=2, default=(32, 32))
+    parser.add_argument("--heatmap-N-space", type=int, nargs=2, default=(16, 16))
     parser.add_argument("--N-ori", type=int, default=8)
-    parser.add_argument("--space-extent", type=float, default=200.0)
+    parser.add_argument("--space-extent", type=float, default=400.0)
     parser.add_argument("--dh", type=float, default=10000.0)
-    parser.add_argument("--max-neurons", type=int, default=50000)
+    parser.add_argument("--max-neurons", type=int, default=60000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--seeds", type=int, nargs="+")
     parser.add_argument(
@@ -470,6 +473,7 @@ def main():
                     perturb_idx,
                     out,
                     args.dpi,
+                    args.heatmap_N_space,
                 )
                 plt.close(fig)
                 print(f"Saved {out} using fit {fit}.")

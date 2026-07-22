@@ -153,8 +153,8 @@ The code uses CUDA automatically when `torch.cuda.is_available()` is true.
 ## Slurm: Origin Perturbation Comparison
 
 To plot PYR and PV responses to horizontal-preference perturbations of PYR and
-PV neurons at the V1 origin, comparing the paper model with two modified Eq. 8
-variants:
+PV neurons at the V1 origin, comparing the paper model with the direct-mapping
+modified Eq. 8 variant:
 
 ```bash
 sbatch --time=04:00:00 --cpus-per-task=8 --mem=128G slurm/origin_perturbation.sbatch
@@ -166,7 +166,9 @@ plots on a Cartesian grid:
 ```bash
 python paper/plot_origin_perturbation_celltype_comparison.py \
   --N-space 32 32 \
+  --heatmap-N-space 16 16 \
   --N-ori 8 \
+  --space-extent 400.0 \
   --fit-index 0 \
   --experiment-name origin_horizontal_perturbation \
   --dh 10000.0 \
@@ -181,6 +183,7 @@ It then runs only the response-over-psi plots on a polar disk grid:
 python paper/plot_origin_perturbation_polar_celltype_comparison.py \
   --N-space 32 32 \
   --N-ori 8 \
+  --space-extent 400.0 \
   --fit-index 0 \
   --experiment-name origin_horizontal_perturbation_polar_psi \
   --dh 10000.0 \
@@ -206,27 +209,30 @@ results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPON
 results/origin_horizontal_perturbation_polar_psi/seed_0/perturb_<PERTURB>_response_<RESPONSE>_over_psi.pdf
 ```
 
-The distance and preferred-orientation profile figures use three vertically
+The heatmap figures are computed from the full simulation grid but cropped to a
+central `--heatmap-N-space 16 16` window for plotting. The perturbation heatmaps
+use the `viridis` colormap.
+
+The distance and preferred-orientation profile figures use two vertically
 aligned scatter subplots plus a final mean-response subplot, with shared axis
 limits only for the scatter subplots and a tighter response range for the mean
 subplot. The psi profile figure uses four distance rows and two preferred
 orientation columns, with 0 deg on the left and -90 deg on the right; each
-subplot overlays all three models and shows the mean response over psi with a
+subplot overlays both models and shows the mean response over psi with a
 shaded min-to-max range for the selected distance and orientation.
 
-The three model variants are:
+The two model variants are:
 
 ```text
 1. original paper, gamma=0:
    1 + 2 kappa_ab cos(theta_i - phi_j)
 2. direct visual-field mapping, gamma=1:
    psi_ij comes from the direct 2D spatial offset between neuron i and neuron j
-3. random iid psi, gamma=1:
-   psi_ij is sampled independently and uniformly for each neuron pair ij
 ```
 
-The removed variants are the two `cos(phi_j - theta_i) cos(psi_ij - phi_j)`
-models.
+The removed variants are the random iid
+`cos(psi_ij - theta_i) cos(psi_ij - phi_j)` model and the two
+`cos(phi_j - theta_i) cos(psi_ij - phi_j)` models.
 
 For the symmetric psi term, start with the product-to-sum identity:
 
@@ -266,9 +272,12 @@ To override the Cartesian and polar-psi grid sizes, use:
 ```bash
 N_SPACE_X=16 \
 N_SPACE_Y=16 \
+HEATMAP_N_SPACE_X=16 \
+HEATMAP_N_SPACE_Y=16 \
 PSI_N_RADIAL=16 \
 PSI_N_ANGLE=32 \
 N_ORI=8 \
+SPACE_EXTENT=400.0 \
 FIT_INDEX=0 \
 EXPERIMENT_NAME=origin_horizontal_perturbation \
 PSI_EXPERIMENT_NAME=origin_horizontal_perturbation_polar_psi \

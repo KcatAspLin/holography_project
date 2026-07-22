@@ -69,10 +69,6 @@ MODEL_VARIANTS = (
         "direct mapping\ngamma=1",
         {"use_psi": True, "psi_mode": "direct_space", "psi_gamma": 1.0},
     ),
-    (
-        "random iid psi\ngamma=1",
-        {"use_psi": True, "psi_mode": "independent", "psi_gamma": 1.0},
-    ),
 )
 
 
@@ -109,19 +105,53 @@ def masked_panels(responses, cell_idx, perturb_idx):
     return panels
 
 
-def plot_responses(x, responses, cell_type, perturb_idx, out, dpi):
+def centered_slice(center, width, size):
+    if width is None or width >= size:
+        return slice(0, size)
+
+    start = center - width // 2
+    end = start + width
+    if start < 0:
+        start, end = 0, width
+    if end > size:
+        start, end = size - width, size
+    return slice(start, end)
+
+
+def heatmap_slices(perturb_idx, N_space, heatmap_N_space):
+    _, ix, iy, _ = perturb_idx
+    if heatmap_N_space is None:
+        return slice(0, N_space[0]), slice(0, N_space[1])
+    return (
+        centered_slice(ix, heatmap_N_space[0], N_space[0]),
+        centered_slice(iy, heatmap_N_space[1], N_space[1]),
+    )
+
+
+def plot_responses(x, responses, cell_type, perturb_idx, out, dpi, heatmap_N_space=None):
     space_x = x["space"][0, :, 0, 0, 0].detach().cpu()
     space_y = x["space"][0, 0, :, 0, 1].detach().cpu()
     ori = x["ori"][0, 0, 0, :].tensor.squeeze(-1).detach().cpu()
     cell_types = list(x["cell_type"].categories)
     cell_idx = cell_types.index(cell_type)
+    xs, ys = heatmap_slices(perturb_idx, (len(space_x), len(space_y)), heatmap_N_space)
+    plot_space_x = space_x[xs]
+    plot_space_y = space_y[ys]
 
     panels = masked_panels(responses, cell_idx, perturb_idx)
-    vmax = max(float(torch.nan_to_num(panel.abs()).max()) for panel in panels.values())
-    if vmax == 0.0:
-        vmax = 1.0
-    norm = colors.TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
-    cmap = plt.get_cmap("coolwarm").copy()
+    plot_panels = {name: panel[xs, ys, :] for name, panel in panels.items()}
+    finite_parts = [
+        panel[torch.isfinite(panel)].reshape(-1)
+        for panel in plot_panels.values()
+        if torch.isfinite(panel).any()
+    ]
+    finite_values = torch.cat(finite_parts) if finite_parts else torch.tensor([])
+    vmin = float(finite_values.min()) if finite_values.numel() else 0.0
+    vmax = float(finite_values.max()) if finite_values.numel() else 1.0
+    if vmin == vmax:
+        vmax = vmin + 1.0
+    norm = colors.Normalize(vmin=vmin, vmax=vmax)
+    cmap = plt.get_cmap("viridis").copy()
     cmap.set_bad("white")
 
     nrows, ncols = len(responses), len(ori)
@@ -137,12 +167,12 @@ def plot_responses(x, responses, cell_type, perturb_idx, out, dpi):
 
     image = None
     extent = [
-        float(space_x.min()),
-        float(space_x.max()),
-        float(space_y.min()),
-        float(space_y.max()),
+        float(plot_space_x.min()),
+        float(plot_space_x.max()),
+        float(plot_space_y.min()),
+        float(plot_space_y.max()),
     ]
-    for row, (model_name, panel) in enumerate(panels.items()):
+    for row, (model_name, panel) in enumerate(plot_panels.items()):
         for col, theta in enumerate(ori):
             ax = axes[row, col]
             image = ax.imshow(
@@ -179,13 +209,14 @@ def main():
     )
     parser.add_argument("--fit", type=Path)
     parser.add_argument("--fit-index", type=int, default=0)
-    parser.add_argument("--N-space", type=int, nargs=2, default=(16, 16))
+    parser.add_argument("--N-space", type=int, nargs=2, default=(32, 32))
+    parser.add_argument("--heatmap-N-space", type=int, nargs=2, default=(16, 16))
     parser.add_argument("--N-ori", type=int, default=6)
-    parser.add_argument("--space-extent", type=float, default=200.0)
+    parser.add_argument("--space-extent", type=float, default=400.0)
     parser.add_argument("--cell-type", choices=["PYR", "PV"], default="PYR")
     parser.add_argument("--perturb-cell-type", choices=["PYR", "PV"], default="PYR")
     parser.add_argument("--dh", type=float, default=10000.0)
-    parser.add_argument("--max-neurons", type=int, default=50000)
+    parser.add_argument("--max-neurons", type=int, default=60000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--seeds", type=int, nargs="+")
     parser.add_argument("--experiment-name", default="origin_horizontal_perturbation")
@@ -195,6 +226,8 @@ def main():
 
     if any(N % 2 for N in args.N_space):
         parser.error("--N-space values must be even so the grid contains the origin.")
+    if any(N <= 0 for N in args.heatmap_N_space):
+        parser.error("--heatmap-N-space values must be positive.")
     if args.N_ori % 2:
         parser.error("--N-ori must be even so the grid contains horizontal ori=0.")
     if args.fit is not None and args.fit_index != 0:
@@ -222,7 +255,15 @@ def main():
             for label, model_kwargs in MODEL_VARIANTS
         }
         out = Path("results") / args.experiment_name / f"seed_{seed}" / args.out.name
-        fig = plot_responses(x, responses, args.cell_type, perturb_idx, out, args.dpi)
+        fig = plot_responses(
+            x,
+            responses,
+            args.cell_type,
+            perturb_idx,
+            out,
+            args.dpi,
+            args.heatmap_N_space,
+        )
         plt.close(fig)
         print(f"Saved {out} using fit {fit}.")
 
