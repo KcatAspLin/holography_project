@@ -118,8 +118,34 @@ def centered_slice(center, width, size):
     return slice(start, end)
 
 
-def heatmap_slices(perturb_idx, N_space, heatmap_N_space):
+def extent_slice(values, center, width):
+    center_value = values[center]
+    half_width = width / 2.0
+    selected = torch.nonzero(
+        (values >= center_value - half_width) & (values <= center_value + half_width)
+    ).reshape(-1)
+    if selected.numel() == 0:
+        return slice(center, center + 1)
+    return slice(int(selected[0]), int(selected[-1]) + 1)
+
+
+def heatmap_slices(
+    perturb_idx,
+    N_space,
+    heatmap_N_space=None,
+    *,
+    space_x=None,
+    space_y=None,
+    heatmap_extent=None,
+):
     _, ix, iy, _ = perturb_idx
+    if heatmap_extent is not None:
+        if space_x is None or space_y is None:
+            raise ValueError("space_x and space_y are required with heatmap_extent.")
+        return (
+            extent_slice(space_x, ix, heatmap_extent[0]),
+            extent_slice(space_y, iy, heatmap_extent[1]),
+        )
     if heatmap_N_space is None:
         return slice(0, N_space[0]), slice(0, N_space[1])
     return (
@@ -128,13 +154,29 @@ def heatmap_slices(perturb_idx, N_space, heatmap_N_space):
     )
 
 
-def plot_responses(x, responses, cell_type, perturb_idx, out, dpi, heatmap_N_space=None):
+def plot_responses(
+    x,
+    responses,
+    cell_type,
+    perturb_idx,
+    out,
+    dpi,
+    heatmap_N_space=None,
+    heatmap_extent=None,
+):
     space_x = x["space"][0, :, 0, 0, 0].detach().cpu()
     space_y = x["space"][0, 0, :, 0, 1].detach().cpu()
     ori = x["ori"][0, 0, 0, :].tensor.squeeze(-1).detach().cpu()
     cell_types = list(x["cell_type"].categories)
     cell_idx = cell_types.index(cell_type)
-    xs, ys = heatmap_slices(perturb_idx, (len(space_x), len(space_y)), heatmap_N_space)
+    xs, ys = heatmap_slices(
+        perturb_idx,
+        (len(space_x), len(space_y)),
+        heatmap_N_space,
+        space_x=space_x,
+        space_y=space_y,
+        heatmap_extent=heatmap_extent,
+    )
     plot_space_x = space_x[xs]
     plot_space_y = space_y[ys]
 
@@ -214,6 +256,7 @@ def plot_response_strength_heatmap(
     out,
     dpi,
     heatmap_N_space=None,
+    heatmap_extent=None,
 ):
     space_x = x["space"][0, :, 0, 0, 0].detach().cpu()
     space_y = x["space"][0, 0, :, 0, 1].detach().cpu()
@@ -223,7 +266,12 @@ def plot_response_strength_heatmap(
 
     _, _, first_perturb_idx = response_items[0]
     xs, ys = heatmap_slices(
-        first_perturb_idx, (len(space_x), len(space_y)), heatmap_N_space
+        first_perturb_idx,
+        (len(space_x), len(space_y)),
+        heatmap_N_space,
+        space_x=space_x,
+        space_y=space_y,
+        heatmap_extent=heatmap_extent,
     )
     plot_space_x = space_x[xs]
     plot_space_y = space_y[ys]
@@ -311,8 +359,16 @@ def main():
     )
     parser.add_argument("--fit", type=Path)
     parser.add_argument("--fit-index", type=int, default=0)
-    parser.add_argument("--N-space", type=int, nargs=2, default=(32, 32))
-    parser.add_argument("--heatmap-N-space", type=int, nargs=2, default=(16, 16))
+    parser.add_argument("--N-space", type=int, nargs=2, default=(64, 64))
+    parser.add_argument("--heatmap-N-space", type=int, nargs=2)
+    parser.add_argument(
+        "--heatmap-extent",
+        type=float,
+        nargs=2,
+        default=(100.0, 100.0),
+        metavar=("WIDTH_UM", "HEIGHT_UM"),
+        help="Physical heatmap window centered on the perturbation.",
+    )
     parser.add_argument("--N-ori", type=int, default=6)
     parser.add_argument("--space-extent", type=float, default=400.0)
     parser.add_argument("--cell-type", choices=["PYR", "PV"], default="PYR")
@@ -325,7 +381,7 @@ def main():
         default=(-10000.0, -5000.0, 0.0, 5000.0, 10000.0),
         help="Perturbation strengths used as heatmap rows.",
     )
-    parser.add_argument("--max-neurons", type=int, default=60000)
+    parser.add_argument("--max-neurons", type=int, default=70000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--seeds", type=int, nargs="+")
     parser.add_argument("--experiment-name", default="origin_horizontal_perturbation")
@@ -335,8 +391,10 @@ def main():
 
     if any(N % 2 for N in args.N_space):
         parser.error("--N-space values must be even so the grid contains the origin.")
-    if any(N <= 0 for N in args.heatmap_N_space):
+    if args.heatmap_N_space is not None and any(N <= 0 for N in args.heatmap_N_space):
         parser.error("--heatmap-N-space values must be positive.")
+    if args.heatmap_extent is not None and any(v <= 0 for v in args.heatmap_extent):
+        parser.error("--heatmap-extent values must be positive.")
     if not args.dh_values:
         parser.error("--dh-values must contain at least one perturbation strength.")
     if args.N_ori % 2:
@@ -384,6 +442,7 @@ def main():
                 out,
                 args.dpi,
                 args.heatmap_N_space,
+                args.heatmap_extent,
             )
             plt.close(fig)
             print(f"Saved {out} using fit {fit}.")

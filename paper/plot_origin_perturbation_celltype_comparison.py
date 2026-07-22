@@ -27,8 +27,10 @@ def angle_diff_deg(x, y):
 def validate_args(parser, args):
     if any(N % 2 for N in args.N_space):
         parser.error("--N-space values must be even so the grid contains the origin.")
-    if any(N <= 0 for N in args.heatmap_N_space):
+    if args.heatmap_N_space is not None and any(N <= 0 for N in args.heatmap_N_space):
         parser.error("--heatmap-N-space values must be positive.")
+    if args.heatmap_extent is not None and any(v <= 0 for v in args.heatmap_extent):
+        parser.error("--heatmap-extent values must be positive.")
     if not args.dh_values:
         parser.error("--dh-values must contain at least one perturbation strength.")
     if args.N_ori % 2:
@@ -94,6 +96,7 @@ def write_perturbation_note(seed_dir, args, fit, seed):
         f"dh_sign={sign}\n"
         f"dh_values={' '.join(f'{dh:g}' for dh in args.dh_values)}\n"
         f"dh_value_signs={' '.join(perturbation_sign(dh) for dh in args.dh_values)}\n"
+        f"heatmap_extent_um={' '.join(f'{v:g}' for v in args.heatmap_extent)}\n"
         "heatmap_layout=one file per model; rows=dh_values; columns=orientation\n"
         "baseline_activity=model.f(model.vf)\n"
         "perturbed_activity=baseline_activity+model_response\n"
@@ -430,8 +433,16 @@ def main():
     )
     parser.add_argument("--fit", type=Path)
     parser.add_argument("--fit-index", type=int, default=0)
-    parser.add_argument("--N-space", type=int, nargs=2, default=(32, 32))
-    parser.add_argument("--heatmap-N-space", type=int, nargs=2, default=(16, 16))
+    parser.add_argument("--N-space", type=int, nargs=2, default=(64, 64))
+    parser.add_argument("--heatmap-N-space", type=int, nargs=2)
+    parser.add_argument(
+        "--heatmap-extent",
+        type=float,
+        nargs=2,
+        default=(100.0, 100.0),
+        metavar=("WIDTH_UM", "HEIGHT_UM"),
+        help="Physical heatmap window centered on the perturbation.",
+    )
     parser.add_argument("--N-ori", type=int, default=8)
     parser.add_argument("--space-extent", type=float, default=400.0)
     parser.add_argument("--dh", type=float, default=10000.0)
@@ -442,7 +453,7 @@ def main():
         default=(-10000.0, -5000.0, 0.0, 5000.0, 10000.0),
         help="Perturbation strengths used as heatmap rows.",
     )
-    parser.add_argument("--max-neurons", type=int, default=60000)
+    parser.add_argument("--max-neurons", type=int, default=70000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--seeds", type=int, nargs="+")
     parser.add_argument(
@@ -502,6 +513,7 @@ def main():
                         out,
                         args.dpi,
                         args.heatmap_N_space,
+                        args.heatmap_extent,
                     )
                     plt.close(fig)
                     print(f"Saved {out} using fit {fit}.")
