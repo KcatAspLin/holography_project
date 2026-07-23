@@ -510,7 +510,7 @@ def main():
     )
     parser.add_argument("--fit", type=Path)
     parser.add_argument("--fit-index", type=int, default=0)
-    parser.add_argument("--N-space", type=int, nargs=2, default=(100, 100))
+    parser.add_argument("--N-space", type=int, nargs=2, default=(50, 50))
     parser.add_argument("--heatmap-N-space", type=int, nargs=2)
     parser.add_argument(
         "--heatmap-extent",
@@ -538,7 +538,7 @@ def main():
         default=(-10000.0, -5000.0, 0.0, 5000.0, 10000.0),
         help="Perturbation strengths used as heatmap rows.",
     )
-    parser.add_argument("--max-neurons", type=int, default=200000)
+    parser.add_argument("--max-neurons", type=int, default=50000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--seeds", type=int, nargs="+")
     parser.add_argument("--experiment-name", default="origin_horizontal_perturbation")

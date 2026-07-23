@@ -165,7 +165,7 @@ plots on a Cartesian grid:
 
 ```bash
 python paper/plot_origin_perturbation_celltype_comparison.py \
-  --N-space 100 100 \
+  --N-space 50 50 \
   --heatmap-extent 50 50 \
   --N-ori 8 \
   --space-extent 400.0 \
@@ -174,24 +174,28 @@ python paper/plot_origin_perturbation_celltype_comparison.py \
   --dh 10000.0 \
   --dh-values -10000.0 -5000.0 0.0 5000.0 10000.0 \
   --seed 0 \
-  --max-neurons 200000 \
+  --max-neurons 50000 \
+  --response-mode matrix_approx \
+  --approx-order 8 \
   --skip-psi
 ```
 
 The Slurm wrapper does not run the polar response-over-psi plots by default for
-the `100 x 100` exact solve. To opt in, set `RUN_POLAR_PSI=1`; the polar command
+the larger perturbation run. To opt in, set `RUN_POLAR_PSI=1`; the polar command
 is:
 
 ```bash
 python paper/plot_origin_perturbation_polar_celltype_comparison.py \
-  --N-space 100 100 \
+  --N-space 50 50 \
   --N-ori 8 \
   --space-extent 400.0 \
   --fit-index 0 \
   --experiment-name origin_horizontal_perturbation_polar_psi \
   --dh 10000.0 \
   --seed 0 \
-  --max-neurons 200000 \
+  --max-neurons 50000 \
+  --response-mode matrix_approx \
+  --approx-order 8 \
   --only-psi
 ```
 
@@ -285,8 +289,8 @@ alpha, r sin alpha)` coordinates, and the disk radius is `--space-extent / 2`.
 To override the Cartesian and polar-psi grid sizes, use:
 
 ```bash
-N_SPACE_X=100 \
-N_SPACE_Y=100 \
+N_SPACE_X=50 \
+N_SPACE_Y=50 \
 HEATMAP_EXTENT_X=50 \
 HEATMAP_EXTENT_Y=50 \
 RUN_POLAR_PSI=0 \
@@ -298,7 +302,7 @@ PSI_EXPERIMENT_NAME=origin_horizontal_perturbation_polar_psi \
 DH=10000.0 \
 DH_VALUES="-10000.0 -5000.0 0.0 5000.0 10000.0" \
 SEED=0 \
-MAX_NEURONS=200000 \
+MAX_NEURONS=50000 \
 RESPONSE_MODE=matrix_approx \
 APPROX_ORDER=8 \
 sbatch --time=12:00:00 --cpus-per-task=8 --mem=1500G slurm/origin_perturbation.sbatch
@@ -310,24 +314,26 @@ activity difference. The default `RESPONSE_MODE=matrix_approx` uses a finite
 Neumann series, `dr = dh + W dh + W^2 dh + ...`, through `APPROX_ORDER=8`. Set
 `RESPONSE_MODE=matrix` only if you explicitly want the exact dense solve
 `(I-W)dr=dh`; at `100 x 100 x 8 x 2` neurons this can require substantially
-more memory than a 1.5 TB job allocation. Each seed output directory writes
+more memory than a 1.5 TB job allocation, so the default perturbation run now
+uses `50 x 50 x 8 x 2` neurons. Each seed output directory writes
 `perturbation_metadata.txt`, recording `dh`, `dh_values`, their signs, and the
 plotted quantity.
 
 You can override the grid, fit, experiment name, seed, or dense-matrix safety
-limit at submit time. A `100 x 100 x 8` exact dense solve is very large, so use
-a large-memory partition/node. For a smaller fallback run:
+limit at submit time. A `100 x 100 x 8` dense run is very large, so use a
+large-memory partition/node only if you deliberately opt back into it. For a
+smaller fallback run:
 
 ```bash
-N_SPACE_X=64 \
-N_SPACE_Y=64 \
+N_SPACE_X=40 \
+N_SPACE_Y=40 \
 HEATMAP_EXTENT_X=50 \
 HEATMAP_EXTENT_Y=50 \
 N_ORI=8 \
 FIT_INDEX=0 \
-EXPERIMENT_NAME=origin_horizontal_perturbation_64x64x8 \
+EXPERIMENT_NAME=origin_horizontal_perturbation_40x40x8 \
 SEED=0 \
-MAX_NEURONS=70000 \
+MAX_NEURONS=30000 \
 RESPONSE_MODE=matrix_approx \
 APPROX_ORDER=8 \
 sbatch --time=08:00:00 --cpus-per-task=8 --mem=512G slurm/origin_perturbation.sbatch

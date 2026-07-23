@@ -583,7 +583,7 @@ def main():
         "--N-space",
         type=int,
         nargs=2,
-        default=(100, 100),
+        default=(50, 50),
         metavar=("N_RADIAL", "N_ANGLE"),
         help="Polar grid resolution: radial samples including origin, angular samples per ring.",
     )
@@ -596,7 +596,7 @@ def main():
     )
     parser.add_argument("--approx-order", type=int, default=8)
     parser.add_argument("--dh", type=float, default=10000.0)
-    parser.add_argument("--max-neurons", type=int, default=200000)
+    parser.add_argument("--max-neurons", type=int, default=50000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--seeds", type=int, nargs="+")
     parser.add_argument(
