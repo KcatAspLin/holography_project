@@ -212,10 +212,12 @@ The heatmap figures are split into separate files for the original model and
 the direct mapping model. They are computed from the full simulation grid but
 cropped to a central `--heatmap-extent 100 100` um window for plotting. Rows
 are the perturbation strengths from `--dh-values`, columns are the orientation
-selectivity bins, and colors show `perturbed_activity - baseline_activity` with
-the `viridis` colormap. The default simulation grid is `64 x 64`, and the
-default heatmap strengths are `-10000, -5000, 0, 5000, 10000`, so the sweep
-includes negative, zero, and positive perturbations.
+selectivity bins, and the final column plots all orientation-selective neurons
+together by averaging across orientation at each spatial location. Colors show
+`perturbed_activity - baseline_activity` with the `viridis` colormap. The
+default simulation grid is `64 x 64`, and the default heatmap strengths are
+`-10000, -5000, 0, 5000, 10000`, so the sweep includes negative, zero, and
+positive perturbations.
 
 The distance and preferred-orientation profile figures use two vertically
 aligned scatter subplots plus a final mean-response subplot, with shared axis

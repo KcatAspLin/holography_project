@@ -97,7 +97,7 @@ def write_perturbation_note(seed_dir, args, fit, seed):
         f"dh_values={' '.join(f'{dh:g}' for dh in args.dh_values)}\n"
         f"dh_value_signs={' '.join(perturbation_sign(dh) for dh in args.dh_values)}\n"
         f"heatmap_extent_um={' '.join(f'{v:g}' for v in args.heatmap_extent)}\n"
-        "heatmap_layout=one file per model; rows=dh_values; columns=orientation\n"
+        "heatmap_layout=one file per model; rows=dh_values; columns=orientation plus all-orientation mean\n"
         "baseline_activity=model.f(model.vf)\n"
         "perturbed_activity=baseline_activity+model_response\n"
         "plotted_value=perturbed_activity-baseline_activity\n"

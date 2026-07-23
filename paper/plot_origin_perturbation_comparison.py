@@ -281,11 +281,21 @@ def plot_response_strength_heatmap(
         panel = response_panel_for_heatmap(dr, cell_idx, perturb_idx)
         panels.append((dh, panel[xs, ys, :]))
 
-    finite_parts = [
-        panel[torch.isfinite(panel)].reshape(-1)
-        for _, panel in panels
-        if torch.isfinite(panel).any()
+    all_orientation_panels = [
+        torch.nanmean(panel, dim=-1) for _, panel in panels
     ]
+    finite_parts = []
+    for (_, panel), all_orientation_panel in zip(
+        panels, all_orientation_panels, strict=True
+    ):
+        if torch.isfinite(panel).any():
+            finite_parts.append(panel[torch.isfinite(panel)].reshape(-1))
+        if torch.isfinite(all_orientation_panel).any():
+            finite_parts.append(
+                all_orientation_panel[
+                    torch.isfinite(all_orientation_panel)
+                ].reshape(-1)
+            )
     finite_values = torch.cat(finite_parts) if finite_parts else torch.tensor([])
     vmin = float(finite_values.min()) if finite_values.numel() else 0.0
     vmax = float(finite_values.max()) if finite_values.numel() else 1.0
@@ -295,7 +305,7 @@ def plot_response_strength_heatmap(
     cmap = plt.get_cmap("viridis").copy()
     cmap.set_bad("white")
 
-    nrows, ncols = len(panels), len(ori)
+    nrows, ncols = len(panels), len(ori) + 1
     fig, axes = plt.subplots(
         nrows,
         ncols,
@@ -313,7 +323,9 @@ def plot_response_strength_heatmap(
         float(plot_space_y.max()),
     ]
     image = None
-    for row, (dh, panel) in enumerate(panels):
+    for row, ((dh, panel), all_orientation_panel) in enumerate(
+        zip(panels, all_orientation_panels, strict=True)
+    ):
         for col, theta in enumerate(ori):
             ax = axes[row, col]
             image = ax.imshow(
@@ -333,6 +345,22 @@ def plot_response_strength_heatmap(
                 ax.set_xlabel("x (um)")
             ax.axhline(0, color="black", linewidth=0.25, alpha=0.4)
             ax.axvline(0, color="black", linewidth=0.25, alpha=0.4)
+        ax = axes[row, -1]
+        image = ax.imshow(
+            all_orientation_panel.T,
+            origin="lower",
+            extent=extent,
+            cmap=cmap,
+            norm=norm,
+            interpolation="nearest",
+            aspect="equal",
+        )
+        if row == 0:
+            ax.set_title("all ori\nmean")
+        if row == nrows - 1:
+            ax.set_xlabel("x (um)")
+        ax.axhline(0, color="black", linewidth=0.25, alpha=0.4)
+        ax.axvline(0, color="black", linewidth=0.25, alpha=0.4)
 
     fig.suptitle(model_name)
     cbar = fig.colorbar(image, ax=axes, shrink=0.72)
