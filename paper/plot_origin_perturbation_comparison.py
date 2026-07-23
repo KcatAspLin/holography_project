@@ -73,14 +73,15 @@ MODEL_VARIANTS = (
 )
 
 
-def make_model(state, model_kwargs, seed=None):
+def make_model(state, model_kwargs, seed=None, mode="matrix", approx_order=2):
     kwargs = {}
     kwargs.update(model_kwargs)
     model = nn.V1(
         ["cell_type", "space", "ori"],
         cell_types=["PYR", "PV"],
         tau=[1.0, 0.5],
-        mode="matrix",
+        mode=mode,
+        approx_order=approx_order,
         seed=seed,
         **kwargs,
     )
@@ -95,10 +96,12 @@ def response(model, x):
     return out["dr"].detach().cpu()
 
 
-def compute_responses(state, x, seed):
+def compute_responses(state, x, seed, mode="matrix", approx_order=2):
     responses = {}
     for label, model_kwargs in MODEL_VARIANTS:
-        model = make_model(state, model_kwargs, seed=seed)
+        model = make_model(
+            state, model_kwargs, seed=seed, mode=mode, approx_order=approx_order
+        )
         responses[label] = response(model, x)
         del model
         gc.collect()
@@ -519,6 +522,12 @@ def main():
     )
     parser.add_argument("--N-ori", type=int, default=6)
     parser.add_argument("--space-extent", type=float, default=400.0)
+    parser.add_argument(
+        "--response-mode",
+        choices=("matrix", "matrix_approx"),
+        default="matrix_approx",
+    )
+    parser.add_argument("--approx-order", type=int, default=8)
     parser.add_argument("--cell-type", choices=["PYR", "PV"], default="PYR")
     parser.add_argument("--perturb-cell-type", choices=["PYR", "PV"], default="PYR")
     parser.add_argument("--dh", type=float, default=10000.0)
@@ -567,7 +576,9 @@ def main():
         torch.manual_seed(seed)
         x = make_grid(args.N_space, args.N_ori, args.space_extent, ["PYR", "PV"])
         perturb_idx = perturb_origin_horizontal(x, args.perturb_cell_type, 1.0)
-        unit_responses = compute_responses(state, x, seed)
+        unit_responses = compute_responses(
+            state, x, seed, mode=args.response_mode, approx_order=args.approx_order
+        )
 
         heatmap_items = {model_name: [] for model_name, _ in MODEL_VARIANTS}
         for dh in args.dh_values:

@@ -1,4 +1,5 @@
 import argparse
+import gc
 import math
 from pathlib import Path
 
@@ -146,11 +147,16 @@ def activity_difference(model, x):
     return perturbed - baseline
 
 
-def compute_responses(state, x, seed):
-    return {
-        label: activity_difference(make_model(state, model_kwargs, seed=seed), x)
-        for label, model_kwargs in MODEL_VARIANTS
-    }
+def compute_responses(state, x, seed, mode="matrix", approx_order=2):
+    responses = {}
+    for label, model_kwargs in MODEL_VARIANTS:
+        model = make_model(
+            state, model_kwargs, seed=seed, mode=mode, approx_order=approx_order
+        )
+        responses[label] = activity_difference(model, x)
+        del model
+        gc.collect()
+    return responses
 
 
 def perturbation_sign(dh):
@@ -169,10 +175,12 @@ def write_perturbation_note(seed_dir, args, fit, seed):
         f"seed={seed}\n"
         f"dh={args.dh:g}\n"
         f"dh_sign={sign}\n"
+        f"response_mode={args.response_mode}\n"
+        f"approx_order={args.approx_order}\n"
         "baseline_activity=model.f(model.vf)\n"
         "perturbed_activity=baseline_activity+model_response\n"
         "plotted_value=perturbed_activity-baseline_activity\n"
-        "matrix_mode_note=model_response solves (I-W)dr=dh, so this equals dr.\n"
+        "matrix_mode_note=matrix solves (I-W)dr=dh exactly; matrix_approx uses a finite Neumann series.\n"
     )
     (seed_dir / "perturbation_metadata.txt").write_text(note)
     print(
@@ -581,6 +589,12 @@ def main():
     )
     parser.add_argument("--N-ori", type=int, default=8)
     parser.add_argument("--space-extent", type=float, default=400.0)
+    parser.add_argument(
+        "--response-mode",
+        choices=("matrix", "matrix_approx"),
+        default="matrix_approx",
+    )
+    parser.add_argument("--approx-order", type=int, default=8)
     parser.add_argument("--dh", type=float, default=10000.0)
     parser.add_argument("--max-neurons", type=int, default=200000)
     parser.add_argument("--seed", type=int, default=0)
@@ -613,7 +627,13 @@ def main():
                 args.N_space, args.N_ori, args.space_extent, CELL_TYPES
             )
             perturb_idx = perturb_origin_horizontal(x, perturb_cell_type, args.dh)
-            responses = compute_responses(state, x, seed)
+            responses = compute_responses(
+                state,
+                x,
+                seed,
+                mode=args.response_mode,
+                approx_order=args.approx_order,
+            )
             rel_ori, distance, psi, _ = grid_metadata(x, perturb_idx)
 
             for response_cell_type in CELL_TYPES:

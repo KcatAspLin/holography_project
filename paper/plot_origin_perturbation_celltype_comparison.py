@@ -73,10 +73,12 @@ def activity_difference(model, x):
     return perturbed - baseline
 
 
-def compute_responses(state, x, seed):
+def compute_responses(state, x, seed, mode="matrix", approx_order=2):
     responses = {}
     for label, model_kwargs in MODEL_VARIANTS:
-        model = make_model(state, model_kwargs, seed=seed)
+        model = make_model(
+            state, model_kwargs, seed=seed, mode=mode, approx_order=approx_order
+        )
         responses[label] = activity_difference(model, x)
         del model
         gc.collect()
@@ -106,13 +108,15 @@ def write_perturbation_note(seed_dir, args, fit, seed):
         f"dh_values={' '.join(f'{dh:g}' for dh in args.dh_values)}\n"
         f"dh_value_signs={' '.join(perturbation_sign(dh) for dh in args.dh_values)}\n"
         f"heatmap_extent_um={' '.join(f'{v:g}' for v in args.heatmap_extent)}\n"
+        f"response_mode={args.response_mode}\n"
+        f"approx_order={args.approx_order}\n"
         "heatmap_layout=one file per model; rows=dh_values; columns=orientation plus all-orientation mean\n"
         "model_comparison_layout=rows=dh_values; columns=models; values=mean over PYR/PV and orientation\n"
         "heatmap_note=responses are solved once for unit dh and scaled linearly for dh_values.\n"
         "baseline_activity=model.f(model.vf)\n"
         "perturbed_activity=baseline_activity+model_response\n"
         "plotted_value=perturbed_activity-baseline_activity\n"
-        "matrix_mode_note=model_response solves (I-W)dr=dh, so this equals dr.\n"
+        "matrix_mode_note=matrix solves (I-W)dr=dh exactly; matrix_approx uses a finite Neumann series.\n"
     )
     (seed_dir / "perturbation_metadata.txt").write_text(note)
     print(
@@ -456,6 +460,12 @@ def main():
     )
     parser.add_argument("--N-ori", type=int, default=8)
     parser.add_argument("--space-extent", type=float, default=400.0)
+    parser.add_argument(
+        "--response-mode",
+        choices=("matrix", "matrix_approx"),
+        default="matrix_approx",
+    )
+    parser.add_argument("--approx-order", type=int, default=8)
     parser.add_argument("--dh", type=float, default=10000.0)
     parser.add_argument(
         "--dh-values",
@@ -493,7 +503,13 @@ def main():
         for perturb_cell_type in CELL_TYPES:
             x = make_grid(args.N_space, args.N_ori, args.space_extent, CELL_TYPES)
             perturb_idx = perturb_origin_horizontal(x, perturb_cell_type, 1.0)
-            unit_responses = compute_responses(state, x, seed)
+            unit_responses = compute_responses(
+                state,
+                x,
+                seed,
+                mode=args.response_mode,
+                approx_order=args.approx_order,
+            )
 
             heatmap_items = {model_name: [] for model_name, _ in MODEL_VARIANTS}
             for dh in args.dh_values:

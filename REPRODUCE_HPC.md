@@ -299,12 +299,18 @@ DH=10000.0 \
 DH_VALUES="-10000.0 -5000.0 0.0 5000.0 10000.0" \
 SEED=0 \
 MAX_NEURONS=200000 \
+RESPONSE_MODE=matrix_approx \
+APPROX_ORDER=8 \
 sbatch --time=12:00:00 --cpus-per-task=8 --mem=1500G slurm/origin_perturbation.sbatch
 ```
 
 Both Cartesian and polar scripts plot `perturbed_activity - baseline_activity`.
-For these matrix-mode runs, the baseline is `model.f(model.vf)` and the response
-solve already returns that activity difference. Each seed output directory writes
+The baseline is `model.f(model.vf)` and the response calculation returns that
+activity difference. The default `RESPONSE_MODE=matrix_approx` uses a finite
+Neumann series, `dr = dh + W dh + W^2 dh + ...`, through `APPROX_ORDER=8`. Set
+`RESPONSE_MODE=matrix` only if you explicitly want the exact dense solve
+`(I-W)dr=dh`; at `100 x 100 x 8 x 2` neurons this can require substantially
+more memory than a 1.5 TB job allocation. Each seed output directory writes
 `perturbation_metadata.txt`, recording `dh`, `dh_values`, their signs, and the
 plotted quantity.
 
@@ -322,6 +328,8 @@ FIT_INDEX=0 \
 EXPERIMENT_NAME=origin_horizontal_perturbation_64x64x8 \
 SEED=0 \
 MAX_NEURONS=70000 \
+RESPONSE_MODE=matrix_approx \
+APPROX_ORDER=8 \
 sbatch --time=08:00:00 --cpus-per-task=8 --mem=512G slurm/origin_perturbation.sbatch
 ```
 

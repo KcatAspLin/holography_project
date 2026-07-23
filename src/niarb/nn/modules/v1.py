@@ -1264,12 +1264,12 @@ class V1(torch.nn.Module):
             if reshape:
                 N_ = math.prod(W.shape[-ndim:])
                 W = W.reshape((*W.shape[: -2 * ndim], N_, N_))
-            I = linalg.eye_like(W)  # (*bshape, *, *shape, *shape)
             dh = x.data[in_var]  # (*, *shape)
             if reshape:
                 dh = dh.reshape((*dh.shape[:-ndim], N_))
 
             if self.mode == "matrix":
+                I = linalg.eye_like(W)  # (*bshape, *, *shape, *shape)
                 dh = dh.unsqueeze(-1)
                 dr = torch.linalg.solve(I - W, dh).squeeze(-1)  # (*bshape, *, *shape)
             else:
