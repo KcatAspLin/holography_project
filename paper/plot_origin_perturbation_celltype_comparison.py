@@ -13,6 +13,7 @@ from plot_origin_perturbation_comparison import (
     make_model,
     model_slug,
     perturb_origin_horizontal,
+    plot_all_neuron_model_comparison_heatmap,
     plot_response_strength_heatmap,
     sorted_fit_paths,
 )
@@ -106,6 +107,7 @@ def write_perturbation_note(seed_dir, args, fit, seed):
         f"dh_value_signs={' '.join(perturbation_sign(dh) for dh in args.dh_values)}\n"
         f"heatmap_extent_um={' '.join(f'{v:g}' for v in args.heatmap_extent)}\n"
         "heatmap_layout=one file per model; rows=dh_values; columns=orientation plus all-orientation mean\n"
+        "model_comparison_layout=rows=dh_values; columns=models; values=mean over PYR/PV and orientation\n"
         "heatmap_note=responses are solved once for unit dh and scaled linearly for dh_values.\n"
         "baseline_activity=model.f(model.vf)\n"
         "perturbed_activity=baseline_activity+model_response\n"
@@ -442,13 +444,13 @@ def main():
     )
     parser.add_argument("--fit", type=Path)
     parser.add_argument("--fit-index", type=int, default=0)
-    parser.add_argument("--N-space", type=int, nargs=2, default=(48, 48))
+    parser.add_argument("--N-space", type=int, nargs=2, default=(100, 100))
     parser.add_argument("--heatmap-N-space", type=int, nargs=2)
     parser.add_argument(
         "--heatmap-extent",
         type=float,
         nargs=2,
-        default=(100.0, 100.0),
+        default=(50.0, 50.0),
         metavar=("WIDTH_UM", "HEIGHT_UM"),
         help="Physical heatmap window centered on the perturbation.",
     )
@@ -462,7 +464,7 @@ def main():
         default=(-10000.0, -5000.0, 0.0, 5000.0, 10000.0),
         help="Perturbation strengths used as heatmap rows.",
     )
-    parser.add_argument("--max-neurons", type=int, default=50000)
+    parser.add_argument("--max-neurons", type=int, default=200000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--seeds", type=int, nargs="+")
     parser.add_argument(
@@ -500,6 +502,21 @@ def main():
 
             responses = scale_responses(unit_responses, args.dh)
             rel_ori, distance, psi, _ = grid_metadata(x, perturb_idx)
+
+            out = (
+                seed_dir
+                / f"perturb_{perturb_cell_type}_response_all_neurons_model_comparison.pdf"
+            )
+            fig = plot_all_neuron_model_comparison_heatmap(
+                x,
+                heatmap_items,
+                out,
+                args.dpi,
+                args.heatmap_N_space,
+                args.heatmap_extent,
+            )
+            plt.close(fig)
+            print(f"Saved {out} using fit {fit}.")
 
             for response_cell_type in CELL_TYPES:
                 for model_name, items in heatmap_items.items():

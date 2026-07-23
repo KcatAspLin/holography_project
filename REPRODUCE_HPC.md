@@ -157,7 +157,7 @@ PV neurons at the V1 origin, comparing the paper model with the direct-mapping
 modified Eq. 8 variant:
 
 ```bash
-sbatch --time=04:00:00 --cpus-per-task=8 --mem=256G slurm/origin_perturbation.sbatch
+sbatch --time=12:00:00 --cpus-per-task=8 --mem=1500G slurm/origin_perturbation.sbatch
 ```
 
 The default Slurm script runs the spatial, distance, and preferred-orientation
@@ -165,8 +165,8 @@ plots on a Cartesian grid:
 
 ```bash
 python paper/plot_origin_perturbation_celltype_comparison.py \
-  --N-space 48 48 \
-  --heatmap-extent 100 100 \
+  --N-space 100 100 \
+  --heatmap-extent 50 50 \
   --N-ori 8 \
   --space-extent 400.0 \
   --fit-index 0 \
@@ -174,22 +174,24 @@ python paper/plot_origin_perturbation_celltype_comparison.py \
   --dh 10000.0 \
   --dh-values -10000.0 -5000.0 0.0 5000.0 10000.0 \
   --seed 0 \
-  --max-neurons 50000 \
+  --max-neurons 200000 \
   --skip-psi
 ```
 
-It then runs only the response-over-psi plots on a polar disk grid:
+The Slurm wrapper does not run the polar response-over-psi plots by default for
+the `100 x 100` exact solve. To opt in, set `RUN_POLAR_PSI=1`; the polar command
+is:
 
 ```bash
 python paper/plot_origin_perturbation_polar_celltype_comparison.py \
-  --N-space 48 48 \
+  --N-space 100 100 \
   --N-ori 8 \
   --space-extent 400.0 \
   --fit-index 0 \
   --experiment-name origin_horizontal_perturbation_polar_psi \
   --dh 10000.0 \
   --seed 0 \
-  --max-neurons 50000 \
+  --max-neurons 200000 \
   --only-psi
 ```
 
@@ -198,6 +200,7 @@ Expected spatial-response outputs:
 ```text
 results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_original_paper_gamma_0.pdf
 results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_direct_mapping_gamma_1.pdf
+results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_all_neurons_model_comparison.pdf
 ```
 
 The script also writes profile outputs for each perturb/response combination:
@@ -210,16 +213,20 @@ results/origin_horizontal_perturbation_polar_psi/seed_0/perturb_<PERTURB>_respon
 
 The heatmap figures are split into separate files for the original model and
 the direct mapping model. They are computed from the full simulation grid but
-cropped to a central `--heatmap-extent 100 100` um window for plotting. Rows
+cropped to a central `--heatmap-extent 50 50` um window for plotting. Rows
 are the perturbation strengths from `--dh-values`, columns are the orientation
 selectivity bins, and the final column plots all orientation-selective neurons
 together by averaging across orientation at each spatial location. Colors show
 `perturbed_activity - baseline_activity` with the `viridis` colormap. The
-default simulation grid is `48 x 48`, which is still finer than the earlier
-`32 x 32` runs but substantially less memory-hungry than `64 x 64`. The default
-heatmap strengths are `-10000, -5000, 0, 5000, 10000`, so the sweep includes
-negative, zero, and positive perturbations. The heatmap sweep is solved once for
-a unit perturbation and then scaled linearly across `--dh-values`.
+default simulation grid is `100 x 100`, and heatmaps show the central `50 x 50`
+um region. The default heatmap strengths are `-10000, -5000, 0, 5000, 10000`,
+so the sweep includes negative, zero, and positive perturbations. The heatmap
+sweep is solved once for a unit perturbation and then scaled linearly across
+`--dh-values`.
+
+The combined model-comparison heatmap has one row per perturbation strength and
+one column per model. Each panel averages responses over PYR/PV cell types and
+all orientation bins at each spatial location.
 
 The distance and preferred-orientation profile figures use two vertically
 aligned scatter subplots plus a final mean-response subplot, with shared axis
@@ -278,12 +285,11 @@ alpha, r sin alpha)` coordinates, and the disk radius is `--space-extent / 2`.
 To override the Cartesian and polar-psi grid sizes, use:
 
 ```bash
-N_SPACE_X=48 \
-N_SPACE_Y=48 \
-HEATMAP_EXTENT_X=100 \
-HEATMAP_EXTENT_Y=100 \
-PSI_N_RADIAL=48 \
-PSI_N_ANGLE=48 \
+N_SPACE_X=100 \
+N_SPACE_Y=100 \
+HEATMAP_EXTENT_X=50 \
+HEATMAP_EXTENT_Y=50 \
+RUN_POLAR_PSI=0 \
 N_ORI=8 \
 SPACE_EXTENT=400.0 \
 FIT_INDEX=0 \
@@ -292,8 +298,8 @@ PSI_EXPERIMENT_NAME=origin_horizontal_perturbation_polar_psi \
 DH=10000.0 \
 DH_VALUES="-10000.0 -5000.0 0.0 5000.0 10000.0" \
 SEED=0 \
-MAX_NEURONS=50000 \
-sbatch --time=04:00:00 --cpus-per-task=8 --mem=256G slurm/origin_perturbation.sbatch
+MAX_NEURONS=200000 \
+sbatch --time=12:00:00 --cpus-per-task=8 --mem=1500G slurm/origin_perturbation.sbatch
 ```
 
 Both Cartesian and polar scripts plot `perturbed_activity - baseline_activity`.
@@ -303,14 +309,14 @@ solve already returns that activity difference. Each seed output directory write
 plotted quantity.
 
 You can override the grid, fit, experiment name, seed, or dense-matrix safety
-limit at submit time. A `64 x 64 x 8` exact dense solve can exceed 256G on some
-nodes, so use a larger-memory partition/node for this:
+limit at submit time. A `100 x 100 x 8` exact dense solve is very large, so use
+a large-memory partition/node. For a smaller fallback run:
 
 ```bash
 N_SPACE_X=64 \
 N_SPACE_Y=64 \
-HEATMAP_EXTENT_X=100 \
-HEATMAP_EXTENT_Y=100 \
+HEATMAP_EXTENT_X=50 \
+HEATMAP_EXTENT_Y=50 \
 N_ORI=8 \
 FIT_INDEX=0 \
 EXPERIMENT_NAME=origin_horizontal_perturbation_64x64x8 \

@@ -385,6 +385,111 @@ def plot_response_strength_heatmap(
     return fig
 
 
+def all_neuron_panel_for_heatmap(dr, perturb_idx):
+    panel = dr.clone()
+    perturb_cell_idx, ix, iy, iori = perturb_idx
+    panel[perturb_cell_idx, ix, iy, iori] = torch.nan
+    spatial_first = panel.permute(1, 2, 0, 3).reshape(
+        panel.shape[1], panel.shape[2], -1
+    )
+    return torch.nanmean(spatial_first, dim=-1)
+
+
+def plot_all_neuron_model_comparison_heatmap(
+    x,
+    comparison_items,
+    out,
+    dpi,
+    heatmap_N_space=None,
+    heatmap_extent=None,
+):
+    space_x = x["space"][0, :, 0, 0, 0].detach().cpu()
+    space_y = x["space"][0, 0, :, 0, 1].detach().cpu()
+
+    first_items = next(iter(comparison_items.values()))
+    _, _, first_perturb_idx = first_items[0]
+    xs, ys = heatmap_slices(
+        first_perturb_idx,
+        (len(space_x), len(space_y)),
+        heatmap_N_space,
+        space_x=space_x,
+        space_y=space_y,
+        heatmap_extent=heatmap_extent,
+    )
+    plot_space_x = space_x[xs]
+    plot_space_y = space_y[ys]
+
+    model_panels = {}
+    for model_name, response_items in comparison_items.items():
+        model_panels[model_name] = [
+            (dh, all_neuron_panel_for_heatmap(dr, perturb_idx)[xs, ys])
+            for dh, dr, perturb_idx in response_items
+        ]
+
+    finite_parts = [
+        panel[torch.isfinite(panel)].reshape(-1)
+        for panels in model_panels.values()
+        for _, panel in panels
+        if torch.isfinite(panel).any()
+    ]
+    finite_values = torch.cat(finite_parts) if finite_parts else torch.tensor([])
+    vmin = float(finite_values.min()) if finite_values.numel() else 0.0
+    vmax = float(finite_values.max()) if finite_values.numel() else 1.0
+    if vmin == vmax:
+        vmax = vmin + 1.0
+    norm = colors.Normalize(vmin=vmin, vmax=vmax)
+    cmap = plt.get_cmap("viridis").copy()
+    cmap.set_bad("white")
+
+    model_names = list(model_panels)
+    dh_values = [dh for dh, _ in model_panels[model_names[0]]]
+    nrows, ncols = len(dh_values), len(model_names)
+    fig, axes = plt.subplots(
+        nrows,
+        ncols,
+        figsize=(2.1 * ncols, 1.8 * nrows),
+        sharex=True,
+        sharey=True,
+        constrained_layout=True,
+        squeeze=False,
+    )
+
+    extent = [
+        float(plot_space_x.min()),
+        float(plot_space_x.max()),
+        float(plot_space_y.min()),
+        float(plot_space_y.max()),
+    ]
+    image = None
+    for col, model_name in enumerate(model_names):
+        for row, (dh, panel) in enumerate(model_panels[model_name]):
+            ax = axes[row, col]
+            image = ax.imshow(
+                panel.T,
+                origin="lower",
+                extent=extent,
+                cmap=cmap,
+                norm=norm,
+                interpolation="nearest",
+                aspect="equal",
+            )
+            if row == 0:
+                ax.set_title(model_name)
+            if col == 0:
+                ax.set_ylabel(f"dh={dh:g}\ny (um)")
+            if row == nrows - 1:
+                ax.set_xlabel("x (um)")
+            ax.axhline(0, color="black", linewidth=0.25, alpha=0.4)
+            ax.axvline(0, color="black", linewidth=0.25, alpha=0.4)
+
+    fig.suptitle("All PYR/PV neurons, orientation-averaged")
+    cbar = fig.colorbar(image, ax=axes, shrink=0.72)
+    cbar.set_label("mean perturbed - baseline activity")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=dpi, bbox_inches="tight")
+    return fig
+
+
 def response_panel_for_heatmap(dr, cell_idx, perturb_idx):
     panel = dr[cell_idx].clone()
     perturb_cell_idx, ix, iy, iori = perturb_idx
@@ -402,13 +507,13 @@ def main():
     )
     parser.add_argument("--fit", type=Path)
     parser.add_argument("--fit-index", type=int, default=0)
-    parser.add_argument("--N-space", type=int, nargs=2, default=(48, 48))
+    parser.add_argument("--N-space", type=int, nargs=2, default=(100, 100))
     parser.add_argument("--heatmap-N-space", type=int, nargs=2)
     parser.add_argument(
         "--heatmap-extent",
         type=float,
         nargs=2,
-        default=(100.0, 100.0),
+        default=(50.0, 50.0),
         metavar=("WIDTH_UM", "HEIGHT_UM"),
         help="Physical heatmap window centered on the perturbation.",
     )
@@ -424,7 +529,7 @@ def main():
         default=(-10000.0, -5000.0, 0.0, 5000.0, 10000.0),
         help="Perturbation strengths used as heatmap rows.",
     )
-    parser.add_argument("--max-neurons", type=int, default=50000)
+    parser.add_argument("--max-neurons", type=int, default=200000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--seeds", type=int, nargs="+")
     parser.add_argument("--experiment-name", default="origin_horizontal_perturbation")

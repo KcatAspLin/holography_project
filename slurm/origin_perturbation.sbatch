@@ -2,17 +2,17 @@
 #SBATCH --job-name=origin-perturb
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
-#SBATCH --time=04:00:00
+#SBATCH --time=12:00:00
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=256G
+#SBATCH --mem=1500G
 
 set -euo pipefail
 
 ENV_NAME="${ENV_NAME:-chau-2024-exact}"
-N_SPACE_X="${N_SPACE_X:-48}"
-N_SPACE_Y="${N_SPACE_Y:-48}"
-HEATMAP_EXTENT_X="${HEATMAP_EXTENT_X:-100.0}"
-HEATMAP_EXTENT_Y="${HEATMAP_EXTENT_Y:-100.0}"
+N_SPACE_X="${N_SPACE_X:-100}"
+N_SPACE_Y="${N_SPACE_Y:-100}"
+HEATMAP_EXTENT_X="${HEATMAP_EXTENT_X:-50.0}"
+HEATMAP_EXTENT_Y="${HEATMAP_EXTENT_Y:-50.0}"
 PSI_N_RADIAL="${PSI_N_RADIAL:-$N_SPACE_X}"
 PSI_N_ANGLE="${PSI_N_ANGLE:-$N_SPACE_Y}"
 N_ORI="${N_ORI:-8}"
@@ -23,9 +23,9 @@ PSI_EXPERIMENT_NAME="${PSI_EXPERIMENT_NAME:-${EXPERIMENT_NAME}_polar_psi}"
 DH="${DH:-10000.0}"
 DH_VALUES="${DH_VALUES:--10000.0 -5000.0 0.0 5000.0 10000.0}"
 SEED="${SEED:-0}"
-MAX_NEURONS="${MAX_NEURONS:-50000}"
+MAX_NEURONS="${MAX_NEURONS:-200000}"
 RUN_CARTESIAN="${RUN_CARTESIAN:-1}"
-RUN_POLAR_PSI="${RUN_POLAR_PSI:-1}"
+RUN_POLAR_PSI="${RUN_POLAR_PSI:-0}"
 DH_SIGN="$(awk -v dh="$DH" 'BEGIN { if (dh > 0) print "positive"; else if (dh < 0) print "negative"; else print "zero" }')"
 read -r -a DH_VALUES_ARRAY <<< "$DH_VALUES"
 CARTESIAN_SCRIPT="paper/plot_origin_perturbation_celltype_comparison.py"
