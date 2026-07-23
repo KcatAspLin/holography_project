@@ -1,4 +1,5 @@
 import argparse
+import gc
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -92,6 +93,20 @@ def response(model, x):
     with torch.inference_mode():
         out = model(x.double(), output="response", ndim=x.ndim, to_dataframe=False)
     return out["dr"].detach().cpu()
+
+
+def compute_responses(state, x, seed):
+    responses = {}
+    for label, model_kwargs in MODEL_VARIANTS:
+        model = make_model(state, model_kwargs, seed=seed)
+        responses[label] = response(model, x)
+        del model
+        gc.collect()
+    return responses
+
+
+def scale_responses(responses, scale):
+    return {label: dr * scale for label, dr in responses.items()}
 
 
 def masked_panels(responses, cell_idx, perturb_idx):
@@ -387,7 +402,7 @@ def main():
     )
     parser.add_argument("--fit", type=Path)
     parser.add_argument("--fit-index", type=int, default=0)
-    parser.add_argument("--N-space", type=int, nargs=2, default=(64, 64))
+    parser.add_argument("--N-space", type=int, nargs=2, default=(48, 48))
     parser.add_argument("--heatmap-N-space", type=int, nargs=2)
     parser.add_argument(
         "--heatmap-extent",
@@ -409,7 +424,7 @@ def main():
         default=(-10000.0, -5000.0, 0.0, 5000.0, 10000.0),
         help="Perturbation strengths used as heatmap rows.",
     )
-    parser.add_argument("--max-neurons", type=int, default=70000)
+    parser.add_argument("--max-neurons", type=int, default=50000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--seeds", type=int, nargs="+")
     parser.add_argument("--experiment-name", default="origin_horizontal_perturbation")
@@ -445,25 +460,20 @@ def main():
     set_rcParams()
     for seed in seeds:
         torch.manual_seed(seed)
-        heatmap_x = None
+        x = make_grid(args.N_space, args.N_ori, args.space_extent, ["PYR", "PV"])
+        perturb_idx = perturb_origin_horizontal(x, args.perturb_cell_type, 1.0)
+        unit_responses = compute_responses(state, x, seed)
+
         heatmap_items = {model_name: [] for model_name, _ in MODEL_VARIANTS}
         for dh in args.dh_values:
-            x = make_grid(args.N_space, args.N_ori, args.space_extent, ["PYR", "PV"])
-            perturb_idx = perturb_origin_horizontal(x, args.perturb_cell_type, dh)
-            responses = {
-                label: response(make_model(state, model_kwargs, seed=seed), x)
-                for label, model_kwargs in MODEL_VARIANTS
-            }
-            if heatmap_x is None:
-                heatmap_x = x
-            for model_name, dr in responses.items():
+            for model_name, dr in scale_responses(unit_responses, dh).items():
                 heatmap_items[model_name].append((dh, dr, perturb_idx))
 
         seed_dir = Path("results") / args.experiment_name / f"seed_{seed}"
         for model_name, items in heatmap_items.items():
             out = seed_dir / f"{args.out.stem}_{model_slug(model_name)}{args.out.suffix}"
             fig = plot_response_strength_heatmap(
-                heatmap_x,
+                x,
                 model_name,
                 items,
                 args.cell_type,

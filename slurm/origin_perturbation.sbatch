@@ -4,13 +4,13 @@
 #SBATCH --error=logs/%x-%j.err
 #SBATCH --time=04:00:00
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=128G
+#SBATCH --mem=256G
 
 set -euo pipefail
 
 ENV_NAME="${ENV_NAME:-chau-2024-exact}"
-N_SPACE_X="${N_SPACE_X:-64}"
-N_SPACE_Y="${N_SPACE_Y:-64}"
+N_SPACE_X="${N_SPACE_X:-48}"
+N_SPACE_Y="${N_SPACE_Y:-48}"
 HEATMAP_EXTENT_X="${HEATMAP_EXTENT_X:-100.0}"
 HEATMAP_EXTENT_Y="${HEATMAP_EXTENT_Y:-100.0}"
 PSI_N_RADIAL="${PSI_N_RADIAL:-$N_SPACE_X}"
@@ -23,7 +23,7 @@ PSI_EXPERIMENT_NAME="${PSI_EXPERIMENT_NAME:-${EXPERIMENT_NAME}_polar_psi}"
 DH="${DH:-10000.0}"
 DH_VALUES="${DH_VALUES:--10000.0 -5000.0 0.0 5000.0 10000.0}"
 SEED="${SEED:-0}"
-MAX_NEURONS="${MAX_NEURONS:-70000}"
+MAX_NEURONS="${MAX_NEURONS:-50000}"
 RUN_CARTESIAN="${RUN_CARTESIAN:-1}"
 RUN_POLAR_PSI="${RUN_POLAR_PSI:-1}"
 DH_SIGN="$(awk -v dh="$DH" 'BEGIN { if (dh > 0) print "positive"; else if (dh < 0) print "negative"; else print "zero" }')"
