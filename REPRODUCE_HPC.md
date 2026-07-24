@@ -187,7 +187,7 @@ profiles on a polar grid:
 python paper/plot_origin_perturbation_polar_celltype_comparison.py \
   --N-space 50 50 \
   --N-ori 8 \
-  --space-extent 1000.0 \
+  --space-extent 200.0 \
   --fit-index 0 \
   --experiment-name origin_horizontal_perturbation_polar_psi \
   --dh 10000.0 \
@@ -291,11 +291,10 @@ Using `gamma=0` gives the original paper model. Using `gamma=1` gives the
 exact `cos(psi - theta) cos(psi - phi)` term.
 
 The polar grid is used for response-over-distance and response-over-psi plots.
-It models a circular field with radius `500 um` by default, using
-`--space-extent 1000` because the polar script interprets `--space-extent` as
-the disk diameter. `--N-space N_RADIAL N_ANGLE` means one origin point plus
-`N_RADIAL - 1` radial rings with `N_ANGLE` points per ring. The model still
-receives 2D Euclidean `space = (r cos alpha, r sin alpha)` coordinates.
+`--N-space N_RADIAL N_ANGLE` means one origin point plus `N_RADIAL - 1` radial
+rings with `N_ANGLE` points per ring. The model still receives 2D Euclidean
+`space = (r cos alpha, r sin alpha)` coordinates, and the disk radius is
+`--space-extent / 2`.
 
 To override the Cartesian and polar-psi grid sizes, use:
 
@@ -307,7 +306,6 @@ HEATMAP_EXTENT_Y=100 \
 RUN_POLAR_PSI=1 \
 N_ORI=8 \
 SPACE_EXTENT=200.0 \
-PSI_SPACE_RADIUS=500.0 \
 FIT_INDEX=0 \
 EXPERIMENT_NAME=origin_horizontal_perturbation \
 PSI_EXPERIMENT_NAME=origin_horizontal_perturbation_polar_psi \
