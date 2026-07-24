@@ -11,23 +11,34 @@ set -euo pipefail
 ENV_NAME="${ENV_NAME:-chau-2024-exact}"
 N_SPACE_X="${N_SPACE_X:-50}"
 N_SPACE_Y="${N_SPACE_Y:-50}"
-HEATMAP_EXTENT_X="${HEATMAP_EXTENT_X:-50.0}"
-HEATMAP_EXTENT_Y="${HEATMAP_EXTENT_Y:-50.0}"
+HEATMAP_EXTENT_X="${HEATMAP_EXTENT_X:-100.0}"
+HEATMAP_EXTENT_Y="${HEATMAP_EXTENT_Y:-100.0}"
 PSI_N_RADIAL="${PSI_N_RADIAL:-$N_SPACE_X}"
 PSI_N_ANGLE="${PSI_N_ANGLE:-$N_SPACE_Y}"
 N_ORI="${N_ORI:-8}"
-SPACE_EXTENT="${SPACE_EXTENT:-400.0}"
+SPACE_EXTENT="${SPACE_EXTENT:-200.0}"
 FIT_INDEX="${FIT_INDEX:-0}"
 EXPERIMENT_NAME="${EXPERIMENT_NAME:-origin_horizontal_perturbation}"
 PSI_EXPERIMENT_NAME="${PSI_EXPERIMENT_NAME:-${EXPERIMENT_NAME}_polar_psi}"
 DH="${DH:-10000.0}"
-DH_VALUES="${DH_VALUES:--10000.0 -5000.0 0.0 5000.0 10000.0}"
+DH_SCALES="${DH_SCALES:--2 -1 0 1 2}"
+DH_VALUES="${DH_VALUES:-}"
+if [[ -z "$DH_VALUES" ]]; then
+  DH_VALUES="$(
+    awk -v dh="$DH" -v scales="$DH_SCALES" 'BEGIN {
+      n = split(scales, a, " ")
+      for (i = 1; i <= n; i++) {
+        printf "%s%g", (i == 1 ? "" : " "), a[i] * dh
+      }
+    }'
+  )"
+fi
 SEED="${SEED:-0}"
 MAX_NEURONS="${MAX_NEURONS:-50000}"
 RESPONSE_MODE="${RESPONSE_MODE:-matrix_approx}"
 APPROX_ORDER="${APPROX_ORDER:-8}"
 RUN_CARTESIAN="${RUN_CARTESIAN:-1}"
-RUN_POLAR_PSI="${RUN_POLAR_PSI:-0}"
+RUN_POLAR_PSI="${RUN_POLAR_PSI:-1}"
 DH_SIGN="$(awk -v dh="$DH" 'BEGIN { if (dh > 0) print "positive"; else if (dh < 0) print "negative"; else print "zero" }')"
 read -r -a DH_VALUES_ARRAY <<< "$DH_VALUES"
 CARTESIAN_SCRIPT="paper/plot_origin_perturbation_celltype_comparison.py"
@@ -72,6 +83,7 @@ echo "EXPERIMENT_NAME=$EXPERIMENT_NAME"
 echo "PSI_EXPERIMENT_NAME=$PSI_EXPERIMENT_NAME"
 echo "DH=$DH"
 echo "DH_SIGN=$DH_SIGN"
+echo "DH_SCALES=$DH_SCALES"
 echo "DH_VALUES=$DH_VALUES"
 echo "SEED=$SEED"
 echo "MAX_NEURONS=$MAX_NEURONS"
@@ -126,6 +138,7 @@ if [[ "$RUN_CARTESIAN" == "1" ]]; then
     --response-mode "$RESPONSE_MODE"
     --approx-order "$APPROX_ORDER"
     --skip-psi
+    --only-heatmaps
   )
   "${cartesian_cmd[@]}"
 fi
@@ -139,11 +152,12 @@ if [[ "$RUN_POLAR_PSI" == "1" ]]; then
     --fit-index "$FIT_INDEX"
     --experiment-name "$PSI_EXPERIMENT_NAME"
     --dh "$DH"
+    --dh-values "${DH_VALUES_ARRAY[@]}"
     --seed "$SEED"
     --max-neurons "$MAX_NEURONS"
     --response-mode "$RESPONSE_MODE"
     --approx-order "$APPROX_ORDER"
-    --only-psi
+    --profiles-only
   )
   "${polar_cmd[@]}"
 fi

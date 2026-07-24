@@ -112,6 +112,31 @@ def scale_responses(responses, scale):
     return {label: dr * scale for label, dr in responses.items()}
 
 
+def default_dh_values(dh):
+    return tuple(scale * dh for scale in (-2.0, -1.0, 0.0, 1.0, 2.0))
+
+
+def format_default_scale(scale):
+    if abs(scale - round(scale)) < 1.0e-8:
+        return f"{int(round(scale))}x"
+    return f"{scale:g}x"
+
+
+def perturbation_label(dh, default_dh):
+    if dh > 0:
+        kind = "excitatory"
+    elif dh < 0:
+        kind = "inhibitory"
+    else:
+        kind = "no perturbation"
+
+    if default_dh == 0:
+        amount = f"{dh:g}"
+    else:
+        amount = f"{format_default_scale(abs(dh) / abs(default_dh))} default"
+    return f"{amount}\n{kind}"
+
+
 def masked_panels(responses, cell_idx, perturb_idx):
     panels = {}
     perturb_cell_idx, ix, iy, iori = perturb_idx
@@ -275,6 +300,7 @@ def plot_response_strength_heatmap(
     dpi,
     heatmap_N_space=None,
     heatmap_extent=None,
+    default_dh=10000.0,
 ):
     space_x = x["space"][0, :, 0, 0, 0].detach().cpu()
     space_y = x["space"][0, 0, :, 0, 1].detach().cpu()
@@ -358,7 +384,7 @@ def plot_response_strength_heatmap(
             if row == 0:
                 ax.set_title(f"{float(theta):g} deg")
             if col == 0:
-                ax.set_ylabel(f"dh={dh:g}\ny (um)")
+                ax.set_ylabel(f"{perturbation_label(dh, default_dh)}\ny (um)")
             if row == nrows - 1:
                 ax.set_xlabel("x (um)")
             ax.axhline(0, color="black", linewidth=0.25, alpha=0.4)
@@ -405,6 +431,7 @@ def plot_all_neuron_model_comparison_heatmap(
     dpi,
     heatmap_N_space=None,
     heatmap_extent=None,
+    default_dh=10000.0,
 ):
     space_x = x["space"][0, :, 0, 0, 0].detach().cpu()
     space_y = x["space"][0, 0, :, 0, 1].detach().cpu()
@@ -479,7 +506,7 @@ def plot_all_neuron_model_comparison_heatmap(
             if row == 0:
                 ax.set_title(model_name)
             if col == 0:
-                ax.set_ylabel(f"dh={dh:g}\ny (um)")
+                ax.set_ylabel(f"{perturbation_label(dh, default_dh)}\ny (um)")
             if row == nrows - 1:
                 ax.set_xlabel("x (um)")
             ax.axhline(0, color="black", linewidth=0.25, alpha=0.4)
@@ -516,12 +543,12 @@ def main():
         "--heatmap-extent",
         type=float,
         nargs=2,
-        default=(50.0, 50.0),
+        default=(100.0, 100.0),
         metavar=("WIDTH_UM", "HEIGHT_UM"),
         help="Physical heatmap window centered on the perturbation.",
     )
     parser.add_argument("--N-ori", type=int, default=6)
-    parser.add_argument("--space-extent", type=float, default=400.0)
+    parser.add_argument("--space-extent", type=float, default=200.0)
     parser.add_argument(
         "--response-mode",
         choices=("matrix", "matrix_approx"),
@@ -535,8 +562,10 @@ def main():
         "--dh-values",
         type=float,
         nargs="+",
-        default=(-10000.0, -5000.0, 0.0, 5000.0, 10000.0),
-        help="Perturbation strengths used as heatmap rows.",
+        help=(
+            "Perturbation strengths used as heatmap rows. "
+            "Defaults to -2, -1, 0, 1, 2 times --dh."
+        ),
     )
     parser.add_argument("--max-neurons", type=int, default=50000)
     parser.add_argument("--seed", type=int, default=0)
@@ -545,6 +574,8 @@ def main():
     parser.add_argument("--out", type=Path, default=Path("origin_horizontal_response.pdf"))
     parser.add_argument("--dpi", type=int, default=300)
     args = parser.parse_args()
+    if args.dh_values is None:
+        args.dh_values = default_dh_values(args.dh)
 
     if any(N % 2 for N in args.N_space):
         parser.error("--N-space values must be even so the grid contains the origin.")
@@ -597,6 +628,7 @@ def main():
                 args.dpi,
                 args.heatmap_N_space,
                 args.heatmap_extent,
+                args.dh,
             )
             plt.close(fig)
             print(f"Saved {out} using fit {fit}.")

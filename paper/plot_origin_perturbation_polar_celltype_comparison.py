@@ -14,7 +14,9 @@ from plot_origin_perturbation_comparison import (
     MODEL_VARIANTS,
     load_model_state,
     make_model,
+    model_slug,
     nearest_index,
+    perturbation_label,
     sorted_fit_paths,
 )
 
@@ -33,6 +35,8 @@ def validate_args(parser, args):
         parser.error("--N-space angular count must be at least 3.")
     if args.N_ori % 2:
         parser.error("--N-ori must be even so the grid contains horizontal ori=0.")
+    if not args.dh_values:
+        parser.error("--dh-values must contain at least one perturbation strength.")
     if args.fit is not None and args.fit_index != 0:
         parser.error("Use either --fit or --fit-index, not both.")
 
@@ -159,12 +163,20 @@ def compute_responses(state, x, seed, mode="matrix", approx_order=2):
     return responses
 
 
+def scale_responses(responses, scale):
+    return {label: dr * scale for label, dr in responses.items()}
+
+
 def perturbation_sign(dh):
     if dh > 0:
         return "positive"
     if dh < 0:
         return "negative"
     return "zero"
+
+
+def default_dh_values(dh):
+    return tuple(scale * dh for scale in (-2.0, -1.0, 0.0, 1.0, 2.0))
 
 
 def write_perturbation_note(seed_dir, args, fit, seed):
@@ -175,8 +187,12 @@ def write_perturbation_note(seed_dir, args, fit, seed):
         f"seed={seed}\n"
         f"dh={args.dh:g}\n"
         f"dh_sign={sign}\n"
+        f"dh_values={' '.join(f'{dh:g}' for dh in args.dh_values)}\n"
+        f"dh_value_signs={' '.join(perturbation_sign(dh) for dh in args.dh_values)}\n"
         f"response_mode={args.response_mode}\n"
         f"approx_order={args.approx_order}\n"
+        "distance_profile_layout=one file per model; rows=dh_values; over_distance=overall mean; over_distance_by_orientation=mean lines by orientation preference\n"
+        "psi_profile_layout=one file per dh value; over_psi=model comparison; over_psi_by_orientation=columns=models, rows=distance, lines=orientation preference\n"
         "baseline_activity=model.f(model.vf)\n"
         "perturbed_activity=baseline_activity+model_response\n"
         "plotted_value=perturbed_activity-baseline_activity\n"
@@ -284,6 +300,22 @@ def distance_orientation_mean_lines(panel, distance, origin_mask, ori, *, bins=3
         )
         lines.append((float(theta), line_x, mean_y))
     return lines
+
+
+def distance_overall_mean_line(panel, distance, origin_mask, *, bins=32):
+    selected = panel[~origin_mask, :]
+    distances = distance[~origin_mask].unsqueeze(-1).expand_as(selected)
+    xs = distances.reshape(-1)
+    ys = selected.reshape(-1)
+    finite = torch.isfinite(xs) & torch.isfinite(ys)
+    if not finite.any():
+        return torch.tensor([]), torch.tensor([])
+    return mean_profile_line(
+        xs[finite],
+        ys[finite],
+        bins=bins,
+        bin_range=(0.0, float(distance[~origin_mask].max())),
+    )
 
 
 def value_mask(values, target):
@@ -580,6 +612,232 @@ def plot_distance_orientation_profiles(
     return fig
 
 
+def plot_response_strength_distance_profiles(
+    x,
+    model_name,
+    response_items,
+    response_cell_type,
+    distance,
+    title,
+    out,
+    dpi,
+    default_dh=10000.0,
+):
+    _, _, _, origin_mask = grid_metadata(x, response_items[0][2])
+    cell_types = list(x["cell_type"].categories)
+    cell_idx = cell_types.index(response_cell_type)
+
+    profiles = []
+    for dh, dr, perturb_idx in response_items:
+        panel = response_panel(dr, cell_idx, perturb_idx)
+        profiles.append((dh, *distance_overall_mean_line(panel, distance, origin_mask)))
+
+    all_x = torch.cat([line_x for _, line_x, mean_y in profiles if line_x.numel()])
+    all_y = torch.cat([mean_y for _, line_x, mean_y in profiles if mean_y.numel()])
+    xlim = padded_limits(all_x, lower_bound=0.0)
+    ylim = padded_limits(all_y)
+
+    nrows = len(profiles)
+    fig, axes = plt.subplots(
+        nrows,
+        1,
+        figsize=(6.6, 1.55 * nrows),
+        sharex=True,
+        sharey=True,
+        constrained_layout=True,
+        squeeze=False,
+    )
+    for row, (dh, line_x, mean_y) in enumerate(profiles):
+        ax = axes[row, 0]
+        ax.plot(line_x, mean_y, linewidth=1.4, color="C0")
+        ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
+        ax.set_xlim(*xlim)
+        ax.set_ylim(*ylim)
+        ax.set_ylabel(f"{perturbation_label(dh, default_dh)}\n{response_cell_type}")
+
+    fig.suptitle(f"{model_name}\n{title}\nresponse = perturbed - baseline activity")
+    axes[-1, 0].set_xlabel("Distance from perturbed neuron (um)")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=dpi, bbox_inches="tight")
+    return fig
+
+
+def plot_response_strength_distance_orientation_profiles(
+    x,
+    model_name,
+    response_items,
+    response_cell_type,
+    distance,
+    title,
+    out,
+    dpi,
+    default_dh=10000.0,
+):
+    _, _, _, origin_mask = grid_metadata(x, response_items[0][2])
+    cell_types = list(x["cell_type"].categories)
+    cell_idx = cell_types.index(response_cell_type)
+    ori = orientation_values(x)
+
+    profiles = []
+    for dh, dr, perturb_idx in response_items:
+        panel = response_panel(dr, cell_idx, perturb_idx)
+        profiles.append(
+            (
+                dh,
+                distance_orientation_mean_lines(panel, distance, origin_mask, ori),
+            )
+        )
+
+    all_x = torch.cat(
+        [
+            line_x
+            for _, lines in profiles
+            for _, line_x, mean_y in lines
+            if line_x.numel() and mean_y.numel()
+        ]
+    )
+    all_y = torch.cat(
+        [
+            mean_y
+            for _, lines in profiles
+            for _, line_x, mean_y in lines
+            if line_x.numel() and mean_y.numel()
+        ]
+    )
+    xlim = padded_limits(all_x, lower_bound=0.0)
+    ylim = padded_limits(all_y)
+
+    nrows = len(profiles)
+    fig, axes = plt.subplots(
+        nrows,
+        1,
+        figsize=(6.6, 1.55 * nrows),
+        sharex=True,
+        sharey=True,
+        constrained_layout=True,
+        squeeze=False,
+    )
+    cmap = plt.get_cmap("twilight_shifted")
+    norm = colors.Normalize(vmin=float(ori.min()), vmax=float(ori.max()))
+    for row, (dh, lines) in enumerate(profiles):
+        ax = axes[row, 0]
+        for theta, line_x, mean_y in lines:
+            ax.plot(line_x, mean_y, linewidth=1.2, color=cmap(norm(theta)))
+        ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
+        ax.set_xlim(*xlim)
+        ax.set_ylim(*ylim)
+        ax.set_ylabel(f"{perturbation_label(dh, default_dh)}\n{response_cell_type}")
+
+    fig.suptitle(f"{model_name}\n{title}\nresponse = perturbed - baseline activity")
+    axes[-1, 0].set_xlabel("Distance from perturbed neuron (um)")
+    cbar = fig.colorbar(
+        plt.cm.ScalarMappable(norm=norm, cmap=cmap),
+        ax=axes,
+        shrink=0.8,
+    )
+    cbar.set_label("Preferred orientation (deg)")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=dpi, bbox_inches="tight")
+    return fig
+
+
+def dh_slug(dh):
+    if dh < 0:
+        sign = "neg"
+    elif dh > 0:
+        sign = "pos"
+    else:
+        sign = "zero"
+    magnitude = model_slug(f"{abs(dh):g}")
+    return f"dh_{sign}_{magnitude}"
+
+
+def plot_psi_orientation_profiles(
+    x, responses, response_cell_type, perturb_idx, distance, psi, title, out, dpi
+):
+    _, _, _, origin_mask = grid_metadata(x, perturb_idx)
+    cell_types = list(x["cell_type"].categories)
+    cell_idx = cell_types.index(response_cell_type)
+    distances = selected_distance_values(distance, origin_mask, count=4)
+    ori = orientation_values(x)
+
+    summaries = []
+    for d in distances:
+        per_model = []
+        for model_name, dr in responses.items():
+            panel = response_panel(dr, cell_idx, perturb_idx)
+            lines = [
+                (
+                    float(theta),
+                    *psi_summary_at_distance_orientation(
+                        panel, distance, psi, ori_idx, d
+                    )[:2],
+                )
+                for ori_idx, theta in enumerate(ori)
+            ]
+            per_model.append((model_name, lines))
+        summaries.append((d, per_model))
+
+    all_x = torch.cat(
+        [
+            xs
+            for _, per_model in summaries
+            for _, lines in per_model
+            for _, xs, mean_y in lines
+            if xs.numel() and mean_y.numel()
+        ]
+    )
+    all_y = torch.cat(
+        [
+            mean_y
+            for _, per_model in summaries
+            for _, lines in per_model
+            for _, xs, mean_y in lines
+            if xs.numel() and mean_y.numel()
+        ]
+    )
+    xlim = padded_limits(all_x)
+    ylim = padded_limits(all_y)
+
+    model_names = list(responses)
+    fig, axes = plt.subplots(
+        len(summaries),
+        len(model_names),
+        figsize=(3.3 * len(model_names), 1.75 * len(summaries)),
+        sharex=True,
+        sharey=True,
+        constrained_layout=True,
+        squeeze=False,
+    )
+    cmap = plt.get_cmap("twilight_shifted")
+    norm = colors.Normalize(vmin=float(ori.min()), vmax=float(ori.max()))
+    for row, (d, per_model) in enumerate(summaries):
+        for col, (model_name, lines) in enumerate(per_model):
+            ax = axes[row, col]
+            for theta, xs, mean_y in lines:
+                ax.plot(xs, mean_y, linewidth=1.1, color=cmap(norm(theta)))
+            ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
+            ax.set_xlim(*xlim)
+            ax.set_ylim(*ylim)
+            if row == 0:
+                ax.set_title(model_name)
+            if col == 0:
+                ax.set_ylabel(f"d={float(d):g} um\n{response_cell_type}")
+
+    fig.suptitle(f"{title}\nresponse = perturbed - baseline activity")
+    for ax in axes[-1, :]:
+        ax.set_xlabel("Angle from perturbed neuron, psi (deg)")
+    cbar = fig.colorbar(
+        plt.cm.ScalarMappable(norm=norm, cmap=cmap),
+        ax=axes,
+        shrink=0.8,
+    )
+    cbar.set_label("Preferred orientation (deg)")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=dpi, bbox_inches="tight")
+    return fig
+
+
 def plot_scatter_profile(
     x,
     responses,
@@ -680,7 +938,7 @@ def main():
         help="Polar grid resolution: radial samples including origin, angular samples per ring.",
     )
     parser.add_argument("--N-ori", type=int, default=8)
-    parser.add_argument("--space-extent", type=float, default=400.0)
+    parser.add_argument("--space-extent", type=float, default=200.0)
     parser.add_argument(
         "--response-mode",
         choices=("matrix", "matrix_approx"),
@@ -688,6 +946,15 @@ def main():
     )
     parser.add_argument("--approx-order", type=int, default=8)
     parser.add_argument("--dh", type=float, default=10000.0)
+    parser.add_argument(
+        "--dh-values",
+        type=float,
+        nargs="+",
+        help=(
+            "Perturbation strengths used as profile rows. "
+            "Defaults to -2, -1, 0, 1, 2 times --dh."
+        ),
+    )
     parser.add_argument("--max-neurons", type=int, default=50000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--seeds", type=int, nargs="+")
@@ -700,8 +967,15 @@ def main():
         action="store_true",
         help="Only write response-over-psi plots from the polar grid.",
     )
+    parser.add_argument(
+        "--profiles-only",
+        action="store_true",
+        help="Write distance and psi profiles, but skip polar spatial and orientation plots.",
+    )
     parser.add_argument("--dpi", type=int, default=300)
     args = parser.parse_args()
+    if args.dh_values is None:
+        args.dh_values = default_dh_values(args.dh)
     validate_args(parser, args)
 
     fit = args.fit or sorted_fit_paths(args.fits_dir)[args.fit_index]
@@ -718,49 +992,138 @@ def main():
             x, _ = make_polar_grid(
                 args.N_space, args.N_ori, args.space_extent, CELL_TYPES
             )
-            perturb_idx = perturb_origin_horizontal(x, perturb_cell_type, args.dh)
-            responses = compute_responses(
+            perturb_idx = perturb_origin_horizontal(x, perturb_cell_type, 1.0)
+            unit_responses = compute_responses(
                 state,
                 x,
                 seed,
                 mode=args.response_mode,
                 approx_order=args.approx_order,
             )
+
+            response_items = {model_name: [] for model_name, _ in MODEL_VARIANTS}
+            scaled_responses_by_dh = []
+            for dh in args.dh_values:
+                responses = scale_responses(unit_responses, dh)
+                scaled_responses_by_dh.append((dh, responses))
+                for model_name, dr in responses.items():
+                    response_items[model_name].append((dh, dr, perturb_idx))
+
+            responses = scale_responses(unit_responses, args.dh)
             rel_ori, distance, psi, _ = grid_metadata(x, perturb_idx)
 
             for response_cell_type in CELL_TYPES:
                 if not args.only_psi:
-                    out = (
-                        seed_dir
-                        / f"perturb_{perturb_cell_type}_response_{response_cell_type}.pdf"
-                    )
-                    fig = plot_responses_polar(
-                        x,
-                        responses,
-                        response_cell_type,
-                        perturb_idx,
-                        out,
-                        args.dpi,
-                    )
-                    plt.close(fig)
-                    print(f"Saved {out} using fit {fit}.")
+                    if not args.profiles_only:
+                        out = (
+                            seed_dir
+                            / f"perturb_{perturb_cell_type}_response_{response_cell_type}.pdf"
+                        )
+                        fig = plot_responses_polar(
+                            x,
+                            responses,
+                            response_cell_type,
+                            perturb_idx,
+                            out,
+                            args.dpi,
+                        )
+                        plt.close(fig)
+                        print(f"Saved {out} using fit {fit}.")
 
+                    for model_name, items in response_items.items():
+                        out = (
+                            seed_dir
+                            / (
+                                f"perturb_{perturb_cell_type}_response_{response_cell_type}"
+                                f"_{model_slug(model_name)}_over_distance.pdf"
+                            )
+                        )
+                        fig = plot_response_strength_distance_profiles(
+                            x,
+                            model_name,
+                            items,
+                            response_cell_type,
+                            distance,
+                            (
+                                f"perturb {perturb_cell_type}, {response_cell_type} response, "
+                                "response over distance"
+                            ),
+                            out,
+                            args.dpi,
+                            args.dh,
+                        )
+                        plt.close(fig)
+                        print(f"Saved {out} using fit {fit}.")
+
+                        out = (
+                            seed_dir
+                            / (
+                                f"perturb_{perturb_cell_type}_response_{response_cell_type}"
+                                f"_{model_slug(model_name)}_over_distance_by_orientation.pdf"
+                            )
+                        )
+                        fig = plot_response_strength_distance_orientation_profiles(
+                            x,
+                            model_name,
+                            items,
+                            response_cell_type,
+                            distance,
+                            (
+                                f"perturb {perturb_cell_type}, {response_cell_type} response, "
+                                "response over distance by orientation preference"
+                            ),
+                            out,
+                            args.dpi,
+                            args.dh,
+                        )
+                        plt.close(fig)
+                        print(f"Saved {out} using fit {fit}.")
+
+                    if not args.profiles_only:
+                        out = (
+                            seed_dir
+                            / (
+                                f"perturb_{perturb_cell_type}_response_{response_cell_type}"
+                                "_over_orientation.pdf"
+                            )
+                        )
+                        fig = plot_scatter_profile(
+                            x,
+                            responses,
+                            response_cell_type,
+                            perturb_idx,
+                            rel_ori,
+                            "Preferred orientation difference (deg)",
+                            (
+                                f"perturb {perturb_cell_type}, {response_cell_type} response, "
+                                "response over preferred orientation"
+                            ),
+                            out,
+                            args.dpi,
+                            values_are_orientation=True,
+                        )
+                        plt.close(fig)
+                        print(f"Saved {out} using fit {fit}.")
+
+                for dh, dh_responses in scaled_responses_by_dh:
+                    dh_label = perturbation_label(dh, args.dh).replace("\n", ", ")
                     out = (
                         seed_dir
                         / (
                             f"perturb_{perturb_cell_type}_response_{response_cell_type}"
-                            "_over_distance.pdf"
+                            f"_{dh_slug(dh)}_over_psi.pdf"
                         )
                     )
-                    fig = plot_distance_orientation_profiles(
+                    fig = plot_psi_distance_profiles(
                         x,
-                        responses,
+                        dh_responses,
                         response_cell_type,
                         perturb_idx,
                         distance,
+                        psi,
                         (
                             f"perturb {perturb_cell_type}, {response_cell_type} response, "
-                            "response over distance"
+                            f"response over psi, {dh_label}"
                         ),
                         out,
                         args.dpi,
@@ -772,50 +1135,25 @@ def main():
                         seed_dir
                         / (
                             f"perturb_{perturb_cell_type}_response_{response_cell_type}"
-                            "_over_orientation.pdf"
+                            f"_{dh_slug(dh)}_over_psi_by_orientation.pdf"
                         )
                     )
-                    fig = plot_scatter_profile(
+                    fig = plot_psi_orientation_profiles(
                         x,
-                        responses,
+                        dh_responses,
                         response_cell_type,
                         perturb_idx,
-                        rel_ori,
-                        "Preferred orientation difference (deg)",
+                        distance,
+                        psi,
                         (
                             f"perturb {perturb_cell_type}, {response_cell_type} response, "
-                            "response over preferred orientation"
+                            f"response over psi by orientation preference, {dh_label}"
                         ),
                         out,
                         args.dpi,
-                        values_are_orientation=True,
                     )
                     plt.close(fig)
                     print(f"Saved {out} using fit {fit}.")
-
-                out = (
-                    seed_dir
-                    / (
-                        f"perturb_{perturb_cell_type}_response_{response_cell_type}"
-                        "_over_psi.pdf"
-                    )
-                )
-                fig = plot_psi_distance_profiles(
-                    x,
-                    responses,
-                    response_cell_type,
-                    perturb_idx,
-                    distance,
-                    psi,
-                    (
-                        f"perturb {perturb_cell_type}, {response_cell_type} response, "
-                        "response over psi"
-                    ),
-                    out,
-                    args.dpi,
-                )
-                plt.close(fig)
-                print(f"Saved {out} using fit {fit}.")
 
 
 if __name__ == "__main__":

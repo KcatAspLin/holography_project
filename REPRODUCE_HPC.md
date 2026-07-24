@@ -160,43 +160,43 @@ modified Eq. 8 variant:
 sbatch --time=12:00:00 --cpus-per-task=8 --mem=1500G slurm/origin_perturbation.sbatch
 ```
 
-The default Slurm script runs the spatial, distance, and preferred-orientation
-plots on a Cartesian grid:
+The default Slurm script runs heatmaps on a Cartesian grid:
 
 ```bash
 python paper/plot_origin_perturbation_celltype_comparison.py \
   --N-space 50 50 \
-  --heatmap-extent 50 50 \
+  --heatmap-extent 100 100 \
   --N-ori 8 \
-  --space-extent 400.0 \
+  --space-extent 200.0 \
   --fit-index 0 \
   --experiment-name origin_horizontal_perturbation \
   --dh 10000.0 \
-  --dh-values -10000.0 -5000.0 0.0 5000.0 10000.0 \
+  --dh-values -20000.0 -10000.0 0.0 10000.0 20000.0 \
   --seed 0 \
   --max-neurons 50000 \
   --response-mode matrix_approx \
   --approx-order 8 \
-  --skip-psi
+  --skip-psi \
+  --only-heatmaps
 ```
 
-The Slurm wrapper does not run the polar response-over-psi plots by default for
-the larger perturbation run. To opt in, set `RUN_POLAR_PSI=1`; the polar command
-is:
+The default Slurm script runs response-over-distance and response-over-psi
+profiles on a polar grid:
 
 ```bash
 python paper/plot_origin_perturbation_polar_celltype_comparison.py \
   --N-space 50 50 \
   --N-ori 8 \
-  --space-extent 400.0 \
+  --space-extent 200.0 \
   --fit-index 0 \
   --experiment-name origin_horizontal_perturbation_polar_psi \
   --dh 10000.0 \
+  --dh-values -20000.0 -10000.0 0.0 10000.0 20000.0 \
   --seed 0 \
   --max-neurons 50000 \
   --response-mode matrix_approx \
   --approx-order 8 \
-  --only-psi
+  --profiles-only
 ```
 
 Expected spatial-response outputs:
@@ -204,32 +204,33 @@ Expected spatial-response outputs:
 ```text
 results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_original_paper_gamma_0.pdf
 results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_direct_mapping_gamma_1.pdf
-results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_original_paper_gamma_0_over_distance.pdf
-results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_direct_mapping_gamma_1_over_distance.pdf
-results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_original_paper_gamma_0_over_distance_by_orientation.pdf
-results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_direct_mapping_gamma_1_over_distance_by_orientation.pdf
 results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_all_neurons_model_comparison.pdf
 ```
 
-The script also writes profile outputs for each perturb/response combination:
+The polar script writes profile outputs for each perturb/response combination:
 
 ```text
-results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_over_orientation.pdf
-results/origin_horizontal_perturbation_polar_psi/seed_0/perturb_<PERTURB>_response_<RESPONSE>_over_psi.pdf
+results/origin_horizontal_perturbation_polar_psi/seed_0/perturb_<PERTURB>_response_<RESPONSE>_<MODEL>_over_distance.pdf
+results/origin_horizontal_perturbation_polar_psi/seed_0/perturb_<PERTURB>_response_<RESPONSE>_<MODEL>_over_distance_by_orientation.pdf
+results/origin_horizontal_perturbation_polar_psi/seed_0/perturb_<PERTURB>_response_<RESPONSE>_dh_<DH>_over_psi.pdf
+results/origin_horizontal_perturbation_polar_psi/seed_0/perturb_<PERTURB>_response_<RESPONSE>_dh_<DH>_over_psi_by_orientation.pdf
 ```
 
 The heatmap figures are split into separate files for the original model and
 the direct mapping model. They are computed from the full simulation grid but
-cropped to a central `--heatmap-extent 50 50` um window for plotting. Rows
+cropped to a central `--heatmap-extent 100 100` um window for plotting. Rows
 are the perturbation strengths from `--dh-values`, columns are the orientation
 selectivity bins, and the final column plots all orientation-selective neurons
 together by averaging across orientation at each spatial location. Colors show
 `perturbed_activity - baseline_activity` with the `viridis` colormap. The
-default simulation grid is `50 x 50`, and heatmaps show the central `50 x 50`
-um region. The default heatmap strengths are `-10000, -5000, 0, 5000, 10000`,
-so the sweep includes negative, zero, and positive perturbations. The heatmap
+default simulation grid is `50 x 50`, and heatmaps show the central `100 x 100`
+um region of a `200 x 200` um simulated square. The default heatmap strengths
+are `-2, -1, 0, 1, 2` times `--dh`, so with `--dh 10000` the actual values are
+`-20000, -10000, 0, 10000, 20000`. The heatmap
 sweep is solved once for a unit perturbation and then scaled linearly across
-`--dh-values`.
+`--dh-values`. Plot rows and perturbation-specific titles label each value as
+an amount of the default perturbation and mark it as inhibitory, excitatory, or
+no perturbation.
 
 The combined model-comparison heatmap has one row per perturbation strength and
 one column per model. Each panel averages responses over PYR/PV cell types and
@@ -240,12 +241,13 @@ model and the direct mapping model. The `_over_distance.pdf` files plot the
 overall mean response over distance, averaging across orientation preferences.
 The `_over_distance_by_orientation.pdf` files plot separate mean response lines
 colored by the response neuron's orientation preference. Both distance-profile
-layouts have one row per perturbation strength. The preferred orientation
-profile figure keeps the two vertically aligned scatter subplots plus a final
-mean-response subplot. The psi profile figure uses four distance rows and two
-preferred orientation columns, with 0 deg on the left and -90 deg on the right;
-each subplot overlays both models and shows the mean response over psi with a
-shaded min-to-max range for the selected distance and orientation.
+layouts have one row per perturbation strength. The psi profile figures are
+written once per perturbation strength. The `_over_psi.pdf` files use four
+distance rows and two preferred-orientation columns, with 0 deg on the left and
+-90 deg on the right; each subplot overlays both models and shows the mean
+response over psi with a shaded min-to-max range for the selected distance and
+orientation. The `_over_psi_by_orientation.pdf` files use columns for models
+and plot separate mean response lines colored by orientation preference.
 
 The two model variants are:
 
@@ -288,7 +290,7 @@ f(psi, theta, phi)
 Using `gamma=0` gives the original paper model. Using `gamma=1` gives the
 exact `cos(psi - theta) cos(psi - phi)` term.
 
-The polar grid is used only for the response-over-psi plots. `--N-space
+The polar grid is used for response-over-distance and response-over-psi plots. `--N-space
 N_RADIAL N_ANGLE` means one origin point plus `N_RADIAL - 1` radial rings with
 `N_ANGLE` points per ring. The model still receives 2D Euclidean `space = (r cos
 alpha, r sin alpha)` coordinates, and the disk radius is `--space-extent / 2`.
@@ -298,16 +300,16 @@ To override the Cartesian and polar-psi grid sizes, use:
 ```bash
 N_SPACE_X=50 \
 N_SPACE_Y=50 \
-HEATMAP_EXTENT_X=50 \
-HEATMAP_EXTENT_Y=50 \
-RUN_POLAR_PSI=0 \
+HEATMAP_EXTENT_X=100 \
+HEATMAP_EXTENT_Y=100 \
+RUN_POLAR_PSI=1 \
 N_ORI=8 \
-SPACE_EXTENT=400.0 \
+SPACE_EXTENT=200.0 \
 FIT_INDEX=0 \
 EXPERIMENT_NAME=origin_horizontal_perturbation \
 PSI_EXPERIMENT_NAME=origin_horizontal_perturbation_polar_psi \
 DH=10000.0 \
-DH_VALUES="-10000.0 -5000.0 0.0 5000.0 10000.0" \
+DH_SCALES="-2 -1 0 1 2" \
 SEED=0 \
 MAX_NEURONS=50000 \
 RESPONSE_MODE=matrix_approx \
@@ -334,9 +336,10 @@ smaller fallback run:
 ```bash
 N_SPACE_X=40 \
 N_SPACE_Y=40 \
-HEATMAP_EXTENT_X=50 \
-HEATMAP_EXTENT_Y=50 \
+HEATMAP_EXTENT_X=100 \
+HEATMAP_EXTENT_Y=100 \
 N_ORI=8 \
+SPACE_EXTENT=200 \
 FIT_INDEX=0 \
 EXPERIMENT_NAME=origin_horizontal_perturbation_40x40x8 \
 SEED=0 \

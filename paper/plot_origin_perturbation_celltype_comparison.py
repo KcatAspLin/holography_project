@@ -13,6 +13,7 @@ from plot_origin_perturbation_comparison import (
     make_grid,
     make_model,
     model_slug,
+    perturbation_label,
     perturb_origin_horizontal,
     plot_all_neuron_model_comparison_heatmap,
     plot_response_strength_heatmap,
@@ -96,6 +97,10 @@ def perturbation_sign(dh):
     if dh < 0:
         return "negative"
     return "zero"
+
+
+def default_dh_values(dh):
+    return tuple(scale * dh for scale in (-2.0, -1.0, 0.0, 1.0, 2.0))
 
 
 def write_perturbation_note(seed_dir, args, fit, seed):
@@ -468,7 +473,15 @@ def plot_distance_orientation_profiles(
 
 
 def plot_response_strength_distance_profiles(
-    x, model_name, response_items, response_cell_type, distance, title, out, dpi
+    x,
+    model_name,
+    response_items,
+    response_cell_type,
+    distance,
+    title,
+    out,
+    dpi,
+    default_dh=10000.0,
 ):
     _, _, _, origin_mask = grid_metadata(x, response_items[0][2])
     cell_types = list(x["cell_type"].categories)
@@ -505,7 +518,7 @@ def plot_response_strength_distance_profiles(
         ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
         ax.set_xlim(*xlim)
         ax.set_ylim(*ylim)
-        ax.set_ylabel(f"dh={dh:g}\n{response_cell_type}")
+        ax.set_ylabel(f"{perturbation_label(dh, default_dh)}\n{response_cell_type}")
 
     fig.suptitle(f"{model_name}\n{title}\nresponse = perturbed - baseline activity")
     axes[-1, 0].set_xlabel("Distance from perturbed neuron (um)")
@@ -515,7 +528,15 @@ def plot_response_strength_distance_profiles(
 
 
 def plot_response_strength_distance_orientation_profiles(
-    x, model_name, response_items, response_cell_type, distance, title, out, dpi
+    x,
+    model_name,
+    response_items,
+    response_cell_type,
+    distance,
+    title,
+    out,
+    dpi,
+    default_dh=10000.0,
 ):
     _, _, _, origin_mask = grid_metadata(x, response_items[0][2])
     cell_types = list(x["cell_type"].categories)
@@ -575,7 +596,7 @@ def plot_response_strength_distance_orientation_profiles(
         ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
         ax.set_xlim(*xlim)
         ax.set_ylim(*ylim)
-        ax.set_ylabel(f"dh={dh:g}\n{response_cell_type}")
+        ax.set_ylabel(f"{perturbation_label(dh, default_dh)}\n{response_cell_type}")
 
     fig.suptitle(f"{model_name}\n{title}\nresponse = perturbed - baseline activity")
     axes[-1, 0].set_xlabel("Distance from perturbed neuron (um)")
@@ -687,12 +708,12 @@ def main():
         "--heatmap-extent",
         type=float,
         nargs=2,
-        default=(50.0, 50.0),
+        default=(100.0, 100.0),
         metavar=("WIDTH_UM", "HEIGHT_UM"),
         help="Physical heatmap window centered on the perturbation.",
     )
     parser.add_argument("--N-ori", type=int, default=8)
-    parser.add_argument("--space-extent", type=float, default=400.0)
+    parser.add_argument("--space-extent", type=float, default=200.0)
     parser.add_argument(
         "--response-mode",
         choices=("matrix", "matrix_approx"),
@@ -704,8 +725,10 @@ def main():
         "--dh-values",
         type=float,
         nargs="+",
-        default=(-10000.0, -5000.0, 0.0, 5000.0, 10000.0),
-        help="Perturbation strengths used as heatmap rows.",
+        help=(
+            "Perturbation strengths used as heatmap/profile rows. "
+            "Defaults to -2, -1, 0, 1, 2 times --dh."
+        ),
     )
     parser.add_argument("--max-neurons", type=int, default=50000)
     parser.add_argument("--seed", type=int, default=0)
@@ -719,8 +742,15 @@ def main():
         action="store_true",
         help="Skip response-over-psi plots; use the polar script for those profiles.",
     )
+    parser.add_argument(
+        "--only-heatmaps",
+        action="store_true",
+        help="Only write Cartesian heatmaps and skip Cartesian profile plots.",
+    )
     parser.add_argument("--dpi", type=int, default=300)
     args = parser.parse_args()
+    if args.dh_values is None:
+        args.dh_values = default_dh_values(args.dh)
     validate_args(parser, args)
 
     fit = args.fit or sorted_fit_paths(args.fits_dir)[args.fit_index]
@@ -749,9 +779,6 @@ def main():
                 for model_name, dr in scale_responses(unit_responses, dh).items():
                     heatmap_items[model_name].append((dh, dr, perturb_idx))
 
-            responses = scale_responses(unit_responses, args.dh)
-            rel_ori, distance, psi, _ = grid_metadata(x, perturb_idx)
-
             out = (
                 seed_dir
                 / f"perturb_{perturb_cell_type}_response_all_neurons_model_comparison.pdf"
@@ -763,9 +790,16 @@ def main():
                 args.dpi,
                 args.heatmap_N_space,
                 args.heatmap_extent,
+                args.dh,
             )
             plt.close(fig)
             print(f"Saved {out} using fit {fit}.")
+
+            if args.only_heatmaps:
+                continue
+
+            responses = scale_responses(unit_responses, args.dh)
+            rel_ori, distance, psi, _ = grid_metadata(x, perturb_idx)
 
             for response_cell_type in CELL_TYPES:
                 for model_name, items in heatmap_items.items():
@@ -785,6 +819,7 @@ def main():
                         args.dpi,
                         args.heatmap_N_space,
                         args.heatmap_extent,
+                        args.dh,
                     )
                     plt.close(fig)
                     print(f"Saved {out} using fit {fit}.")
@@ -808,6 +843,7 @@ def main():
                         ),
                         out,
                         args.dpi,
+                        args.dh,
                     )
                     plt.close(fig)
                     print(f"Saved {out} using fit {fit}.")
@@ -831,6 +867,7 @@ def main():
                         ),
                         out,
                         args.dpi,
+                        args.dh,
                     )
                     plt.close(fig)
                     print(f"Saved {out} using fit {fit}.")
