@@ -270,6 +270,22 @@ def mean_profile_line(xs, ys, *, bins=None, bin_range=None):
     return unique_x, torch.stack(mean_y)
 
 
+def distance_orientation_mean_lines(panel, distance, origin_mask, ori, *, bins=32):
+    distances = distance[~origin_mask].reshape(-1)
+    bin_range = (0.0, float(distances.max())) if distances.numel() else None
+    lines = []
+    for ori_idx, theta in enumerate(ori):
+        responses = panel[..., ori_idx][~origin_mask].reshape(-1)
+        finite = torch.isfinite(distances) & torch.isfinite(responses)
+        if not finite.any():
+            continue
+        line_x, mean_y = mean_profile_line(
+            distances[finite], responses[finite], bins=bins, bin_range=bin_range
+        )
+        lines.append((float(theta), line_x, mean_y))
+    return lines
+
+
 def value_mask(values, target):
     tol = max(1.0e-4, abs(float(target)) * 1.0e-4)
     return (values - target).abs() <= tol
@@ -488,6 +504,82 @@ def plot_responses_polar(x, responses, cell_type, perturb_idx, out, dpi):
     return fig
 
 
+def plot_distance_orientation_profiles(
+    x, responses, response_cell_type, perturb_idx, distance, title, out, dpi
+):
+    _, _, _, origin_mask = grid_metadata(x, perturb_idx)
+    cell_types = list(x["cell_type"].categories)
+    cell_idx = cell_types.index(response_cell_type)
+    ori = orientation_values(x)
+
+    profiles = []
+    for model_name, dr in responses.items():
+        panel = response_panel(dr, cell_idx, perturb_idx)
+        profiles.append(
+            (
+                model_name,
+                distance_orientation_mean_lines(panel, distance, origin_mask, ori),
+            )
+        )
+
+    all_x = torch.cat(
+        [
+            line_x
+            for _, lines in profiles
+            for _, line_x, mean_y in lines
+            if line_x.numel() and mean_y.numel()
+        ]
+    )
+    all_y = torch.cat(
+        [
+            mean_y
+            for _, lines in profiles
+            for _, line_x, mean_y in lines
+            if line_x.numel() and mean_y.numel()
+        ]
+    )
+    xlim = padded_limits(all_x, lower_bound=0.0)
+    ylim = padded_limits(all_y)
+
+    nrows = len(profiles)
+    fig, axes = plt.subplots(
+        nrows,
+        1,
+        figsize=(6.4, 1.7 * nrows),
+        sharex=True,
+        sharey=True,
+        constrained_layout=True,
+        squeeze=False,
+    )
+    cmap = plt.get_cmap("twilight_shifted")
+    norm = colors.Normalize(vmin=float(ori.min()), vmax=float(ori.max()))
+    for row, (model_name, lines) in enumerate(profiles):
+        ax = axes[row, 0]
+        for theta, line_x, mean_y in lines:
+            ax.plot(
+                line_x,
+                mean_y,
+                linewidth=1.2,
+                color=cmap(norm(theta)),
+            )
+        ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
+        ax.set_xlim(*xlim)
+        ax.set_ylim(*ylim)
+        ax.set_ylabel(f"{model_name}\n{response_cell_type}")
+
+    axes[0, 0].set_title(title)
+    axes[-1, 0].set_xlabel("Distance from perturbed neuron (um)")
+    cbar = fig.colorbar(
+        plt.cm.ScalarMappable(norm=norm, cmap=cmap),
+        ax=axes,
+        shrink=0.8,
+    )
+    cbar.set_label("Preferred orientation (deg)")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=dpi, bbox_inches="tight")
+    return fig
+
+
 def plot_scatter_profile(
     x,
     responses,
@@ -660,20 +752,18 @@ def main():
                             "_over_distance.pdf"
                         )
                     )
-                    fig = plot_scatter_profile(
+                    fig = plot_distance_orientation_profiles(
                         x,
                         responses,
                         response_cell_type,
                         perturb_idx,
                         distance,
-                        "Distance from perturbed neuron (um)",
                         (
                             f"perturb {perturb_cell_type}, {response_cell_type} response, "
                             "response over distance"
                         ),
                         out,
                         args.dpi,
-                        x_lower_bound=0.0,
                     )
                     plt.close(fig)
                     print(f"Saved {out} using fit {fit}.")
