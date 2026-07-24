@@ -61,7 +61,9 @@ def perturb_origin_horizontal(x, cell_type, dh):
     return cell_idx, ix, iy, iori
 
 
-MODEL_VARIANTS = (
+GAIN_VALUES = (1.0, 0.5)
+
+BASE_MODEL_VARIANTS = (
     (
         "original paper\ngamma=0",
         {"use_psi": True, "psi_mode": "direct_space", "psi_gamma": 0.0},
@@ -70,12 +72,33 @@ MODEL_VARIANTS = (
         "direct mapping\ngamma=1",
         {"use_psi": True, "psi_mode": "direct_space", "psi_gamma": 1.0},
     ),
+    (
+        "random psi\ngamma=1",
+        {"use_psi": True, "psi_mode": "independent", "psi_gamma": 1.0},
+    ),
 )
+
+
+def build_model_variants(gain_values=GAIN_VALUES):
+    variants = []
+    for gain in gain_values:
+        for label, kwargs in BASE_MODEL_VARIANTS:
+            variants.append(
+                (
+                    f"gain={gain:g}\n{label}",
+                    {**kwargs, "_gain_scale": gain},
+                )
+            )
+    return tuple(variants)
+
+
+MODEL_VARIANTS = build_model_variants()
 
 
 def make_model(state, model_kwargs, seed=None, mode="matrix", approx_order=2):
     kwargs = {}
     kwargs.update(model_kwargs)
+    gain_scale = kwargs.pop("_gain_scale", 1.0)
     model = nn.V1(
         ["cell_type", "space", "ori"],
         cell_types=["PYR", "PV"],
@@ -86,7 +109,9 @@ def make_model(state, model_kwargs, seed=None, mode="matrix", approx_order=2):
         **kwargs,
     )
     model.double()
-    model.load_state_dict(state, strict=False)
+    scaled_state = dict(state)
+    scaled_state["gW"] = state["gW"] * gain_scale
+    model.load_state_dict(scaled_state, strict=False)
     return model
 
 
@@ -291,6 +316,35 @@ def model_slug(model_name):
     )
 
 
+def heatmap_color_config(finite_values, color_mode):
+    if color_mode == "viridis":
+        vmin = float(finite_values.min()) if finite_values.numel() else 0.0
+        vmax = float(finite_values.max()) if finite_values.numel() else 1.0
+        if vmin == vmax:
+            vmax = vmin + 1.0
+        norm = colors.Normalize(vmin=vmin, vmax=vmax)
+        cmap = plt.get_cmap("viridis").copy()
+        cbar_label = None
+        transform = lambda panel: panel
+    elif color_mode == "binary":
+        norm = colors.BoundaryNorm([-1.5, -0.5, 0.5, 1.5], 3)
+        cmap = colors.ListedColormap(["#2166ac", "white", "#b2182b"])
+        cbar_label = "response sign"
+
+        def transform(panel):
+            out = torch.zeros_like(panel)
+            out[panel < 0.0] = -1.0
+            out[panel > 0.0] = 1.0
+            out[~torch.isfinite(panel)] = torch.nan
+            return out
+
+    else:
+        raise ValueError(f"Unknown heatmap color_mode={color_mode!r}.")
+
+    cmap.set_bad("white")
+    return cmap, norm, cbar_label, transform
+
+
 def plot_response_strength_heatmap(
     x,
     model_name,
@@ -301,6 +355,7 @@ def plot_response_strength_heatmap(
     heatmap_N_space=None,
     heatmap_extent=None,
     default_dh=10000.0,
+    color_mode="viridis",
 ):
     space_x = x["space"][0, :, 0, 0, 0].detach().cpu()
     space_y = x["space"][0, 0, :, 0, 1].detach().cpu()
@@ -341,13 +396,9 @@ def plot_response_strength_heatmap(
                 ].reshape(-1)
             )
     finite_values = torch.cat(finite_parts) if finite_parts else torch.tensor([])
-    vmin = float(finite_values.min()) if finite_values.numel() else 0.0
-    vmax = float(finite_values.max()) if finite_values.numel() else 1.0
-    if vmin == vmax:
-        vmax = vmin + 1.0
-    norm = colors.Normalize(vmin=vmin, vmax=vmax)
-    cmap = plt.get_cmap("viridis").copy()
-    cmap.set_bad("white")
+    cmap, norm, cbar_label, transform_panel = heatmap_color_config(
+        finite_values, color_mode
+    )
 
     nrows, ncols = len(panels), len(ori) + 1
     fig, axes = plt.subplots(
@@ -373,7 +424,7 @@ def plot_response_strength_heatmap(
         for col, theta in enumerate(ori):
             ax = axes[row, col]
             image = ax.imshow(
-                panel[:, :, col].T,
+                transform_panel(panel[:, :, col]).T,
                 origin="lower",
                 extent=extent,
                 cmap=cmap,
@@ -391,7 +442,7 @@ def plot_response_strength_heatmap(
             ax.axvline(0, color="black", linewidth=0.25, alpha=0.4)
         ax = axes[row, -1]
         image = ax.imshow(
-            all_orientation_panel.T,
+            transform_panel(all_orientation_panel).T,
             origin="lower",
             extent=extent,
             cmap=cmap,
@@ -408,7 +459,10 @@ def plot_response_strength_heatmap(
 
     fig.suptitle(model_name)
     cbar = fig.colorbar(image, ax=axes, shrink=0.72)
-    cbar.set_label(f"{cell_type} perturbed - baseline activity")
+    if color_mode == "binary":
+        cbar.set_ticks([-1, 0, 1])
+        cbar.set_ticklabels(["negative", "zero", "positive"])
+    cbar.set_label(cbar_label or f"{cell_type} perturbed - baseline activity")
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=dpi, bbox_inches="tight")
     return fig
@@ -432,6 +486,7 @@ def plot_all_neuron_model_comparison_heatmap(
     heatmap_N_space=None,
     heatmap_extent=None,
     default_dh=10000.0,
+    color_mode="viridis",
 ):
     space_x = x["space"][0, :, 0, 0, 0].detach().cpu()
     space_y = x["space"][0, 0, :, 0, 1].detach().cpu()
@@ -463,13 +518,9 @@ def plot_all_neuron_model_comparison_heatmap(
         if torch.isfinite(panel).any()
     ]
     finite_values = torch.cat(finite_parts) if finite_parts else torch.tensor([])
-    vmin = float(finite_values.min()) if finite_values.numel() else 0.0
-    vmax = float(finite_values.max()) if finite_values.numel() else 1.0
-    if vmin == vmax:
-        vmax = vmin + 1.0
-    norm = colors.Normalize(vmin=vmin, vmax=vmax)
-    cmap = plt.get_cmap("viridis").copy()
-    cmap.set_bad("white")
+    cmap, norm, cbar_label, transform_panel = heatmap_color_config(
+        finite_values, color_mode
+    )
 
     model_names = list(model_panels)
     dh_values = [dh for dh, _ in model_panels[model_names[0]]]
@@ -495,7 +546,7 @@ def plot_all_neuron_model_comparison_heatmap(
         for row, (dh, panel) in enumerate(model_panels[model_name]):
             ax = axes[row, col]
             image = ax.imshow(
-                panel.T,
+                transform_panel(panel).T,
                 origin="lower",
                 extent=extent,
                 cmap=cmap,
@@ -514,7 +565,10 @@ def plot_all_neuron_model_comparison_heatmap(
 
     fig.suptitle("All PYR/PV neurons, orientation-averaged")
     cbar = fig.colorbar(image, ax=axes, shrink=0.72)
-    cbar.set_label("mean perturbed - baseline activity")
+    if color_mode == "binary":
+        cbar.set_ticks([-1, 0, 1])
+        cbar.set_ticklabels(["negative", "zero", "positive"])
+    cbar.set_label(cbar_label or "mean perturbed - baseline activity")
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=dpi, bbox_inches="tight")
     return fig

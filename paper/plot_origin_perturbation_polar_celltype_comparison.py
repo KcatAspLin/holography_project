@@ -39,6 +39,8 @@ def validate_args(parser, args):
         parser.error("--dh-values must contain at least one perturbation strength.")
     if args.fit is not None and args.fit_index != 0:
         parser.error("Use either --fit or --fit-index, not both.")
+    if not args.perturb_cell_types:
+        parser.error("--perturb-cell-types must contain at least one cell type.")
 
     N_spatial = 1 + (args.N_space[0] - 1) * args.N_space[1]
     N_total = len(CELL_TYPES) * N_spatial * args.N_ori
@@ -191,8 +193,9 @@ def write_perturbation_note(seed_dir, args, fit, seed):
         f"dh_value_signs={' '.join(perturbation_sign(dh) for dh in args.dh_values)}\n"
         f"response_mode={args.response_mode}\n"
         f"approx_order={args.approx_order}\n"
+        f"gain_values={' '.join(label.splitlines()[0].split('=')[1] for label, _ in MODEL_VARIANTS)}\n"
         "distance_profile_layout=one file per model; rows=dh_values; over_distance=overall mean; over_distance_by_orientation=mean lines by orientation preference\n"
-        "psi_profile_layout=one file per dh value; over_psi=model comparison; over_psi_by_orientation=columns=models, rows=distance, lines=orientation preference\n"
+        "psi_profile_layout=one file per dh value; over_psi=model comparison; over_psi_by_orientation=columns=models, rows=distance, black line=overall mean, colored lines=orientation preference\n"
         "baseline_activity=model.f(model.vf)\n"
         "perturbed_activity=baseline_activity+model_response\n"
         "plotted_value=perturbed_activity-baseline_activity\n"
@@ -286,12 +289,17 @@ def mean_profile_line(xs, ys, *, bins=None, bin_range=None):
     return unique_x, torch.stack(mean_y)
 
 
-def distance_orientation_mean_lines(panel, distance, origin_mask, ori, *, bins=32):
-    distances = distance[~origin_mask].reshape(-1)
+def distance_orientation_mean_lines(
+    panel, distance, origin_mask, ori, *, bins=32, max_distance=None
+):
+    spatial_mask = ~origin_mask
+    if max_distance is not None:
+        spatial_mask = spatial_mask & (distance <= max_distance)
+    distances = distance[spatial_mask].reshape(-1)
     bin_range = (0.0, float(distances.max())) if distances.numel() else None
     lines = []
     for ori_idx, theta in enumerate(ori):
-        responses = panel[..., ori_idx][~origin_mask].reshape(-1)
+        responses = panel[..., ori_idx][spatial_mask].reshape(-1)
         finite = torch.isfinite(distances) & torch.isfinite(responses)
         if not finite.any():
             continue
@@ -302,9 +310,14 @@ def distance_orientation_mean_lines(panel, distance, origin_mask, ori, *, bins=3
     return lines
 
 
-def distance_overall_mean_line(panel, distance, origin_mask, *, bins=32):
-    selected = panel[~origin_mask, :]
-    distances = distance[~origin_mask].unsqueeze(-1).expand_as(selected)
+def distance_overall_mean_line(
+    panel, distance, origin_mask, *, bins=32, max_distance=None
+):
+    spatial_mask = ~origin_mask
+    if max_distance is not None:
+        spatial_mask = spatial_mask & (distance <= max_distance)
+    selected = panel[spatial_mask, :]
+    distances = distance[spatial_mask].unsqueeze(-1).expand_as(selected)
     xs = distances.reshape(-1)
     ys = selected.reshape(-1)
     finite = torch.isfinite(xs) & torch.isfinite(ys)
@@ -314,7 +327,7 @@ def distance_overall_mean_line(panel, distance, origin_mask, *, bins=32):
         xs[finite],
         ys[finite],
         bins=bins,
-        bin_range=(0.0, float(distance[~origin_mask].max())),
+        bin_range=(0.0, float(distance[spatial_mask].max())),
     )
 
 
@@ -323,8 +336,11 @@ def value_mask(values, target):
     return (values - target).abs() <= tol
 
 
-def selected_distance_values(distance, origin_mask, count=4):
-    distances = torch.unique(distance[~origin_mask]).sort().values
+def selected_distance_values(distance, origin_mask, count=4, max_distance=None):
+    spatial_mask = ~origin_mask
+    if max_distance is not None:
+        spatial_mask = spatial_mask & (distance <= max_distance)
+    distances = torch.unique(distance[spatial_mask]).sort().values
     if distances.numel() <= count:
         return distances
 
@@ -370,13 +386,51 @@ def psi_summary_at_distance_orientation(panel, distance, psi, ori_idx, d):
     )
 
 
+def psi_summary_overall(panel, distance, psi, d):
+    spatial_mask = value_mask(distance, d)
+    psi_values = torch.unique(psi[spatial_mask]).sort().values
+    x, y_mean, y_min, y_max = [], [], [], []
+    for psi_value in psi_values:
+        mask = spatial_mask & value_mask(psi, psi_value)
+        selected = panel[mask, :].reshape(-1)
+        selected = selected[torch.isfinite(selected)]
+        if selected.numel() == 0:
+            continue
+        x.append(psi_value)
+        y_mean.append(selected.mean())
+        y_min.append(selected.min())
+        y_max.append(selected.max())
+
+    if not x:
+        empty = torch.tensor([])
+        return empty, empty, empty, empty
+    return (
+        torch.stack(x),
+        torch.stack(y_mean),
+        torch.stack(y_min),
+        torch.stack(y_max),
+    )
+
+
 def plot_psi_distance_profiles(
-    x, responses, response_cell_type, perturb_idx, distance, psi, title, out, dpi
+    x,
+    responses,
+    response_cell_type,
+    perturb_idx,
+    distance,
+    psi,
+    title,
+    out,
+    dpi,
+    *,
+    max_distance=None,
 ):
     _, _, _, origin_mask = grid_metadata(x, perturb_idx)
     cell_types = list(x["cell_type"].categories)
     cell_idx = cell_types.index(response_cell_type)
-    distances = selected_distance_values(distance, origin_mask, count=4)
+    distances = selected_distance_values(
+        distance, origin_mask, count=4, max_distance=max_distance
+    )
     ori = orientation_values(x)
     orientation_targets = (0.0, -90.0)
     orientation_indices = [
@@ -537,7 +591,16 @@ def plot_responses_polar(x, responses, cell_type, perturb_idx, out, dpi):
 
 
 def plot_distance_orientation_profiles(
-    x, responses, response_cell_type, perturb_idx, distance, title, out, dpi
+    x,
+    responses,
+    response_cell_type,
+    perturb_idx,
+    distance,
+    title,
+    out,
+    dpi,
+    *,
+    max_distance=None,
 ):
     _, _, _, origin_mask = grid_metadata(x, perturb_idx)
     cell_types = list(x["cell_type"].categories)
@@ -550,7 +613,9 @@ def plot_distance_orientation_profiles(
         profiles.append(
             (
                 model_name,
-                distance_orientation_mean_lines(panel, distance, origin_mask, ori),
+                distance_orientation_mean_lines(
+                    panel, distance, origin_mask, ori, max_distance=max_distance
+                ),
             )
         )
 
@@ -622,6 +687,7 @@ def plot_response_strength_distance_profiles(
     out,
     dpi,
     default_dh=10000.0,
+    max_distance=None,
 ):
     _, _, _, origin_mask = grid_metadata(x, response_items[0][2])
     cell_types = list(x["cell_type"].categories)
@@ -630,7 +696,14 @@ def plot_response_strength_distance_profiles(
     profiles = []
     for dh, dr, perturb_idx in response_items:
         panel = response_panel(dr, cell_idx, perturb_idx)
-        profiles.append((dh, *distance_overall_mean_line(panel, distance, origin_mask)))
+        profiles.append(
+            (
+                dh,
+                *distance_overall_mean_line(
+                    panel, distance, origin_mask, max_distance=max_distance
+                ),
+            )
+        )
 
     all_x = torch.cat([line_x for _, line_x, mean_y in profiles if line_x.numel()])
     all_y = torch.cat([mean_y for _, line_x, mean_y in profiles if mean_y.numel()])
@@ -672,6 +745,7 @@ def plot_response_strength_distance_orientation_profiles(
     out,
     dpi,
     default_dh=10000.0,
+    max_distance=None,
 ):
     _, _, _, origin_mask = grid_metadata(x, response_items[0][2])
     cell_types = list(x["cell_type"].categories)
@@ -684,7 +758,9 @@ def plot_response_strength_distance_orientation_profiles(
         profiles.append(
             (
                 dh,
-                distance_orientation_mean_lines(panel, distance, origin_mask, ori),
+                distance_orientation_mean_lines(
+                    panel, distance, origin_mask, ori, max_distance=max_distance
+                ),
             )
         )
 
@@ -753,12 +829,24 @@ def dh_slug(dh):
 
 
 def plot_psi_orientation_profiles(
-    x, responses, response_cell_type, perturb_idx, distance, psi, title, out, dpi
+    x,
+    responses,
+    response_cell_type,
+    perturb_idx,
+    distance,
+    psi,
+    title,
+    out,
+    dpi,
+    *,
+    max_distance=None,
 ):
     _, _, _, origin_mask = grid_metadata(x, perturb_idx)
     cell_types = list(x["cell_type"].categories)
     cell_idx = cell_types.index(response_cell_type)
-    distances = selected_distance_values(distance, origin_mask, count=4)
+    distances = selected_distance_values(
+        distance, origin_mask, count=4, max_distance=max_distance
+    )
     ori = orientation_values(x)
 
     summaries = []
@@ -766,6 +854,7 @@ def plot_psi_orientation_profiles(
         per_model = []
         for model_name, dr in responses.items():
             panel = response_panel(dr, cell_idx, perturb_idx)
+            mean_line = psi_summary_overall(panel, distance, psi, d)[:2]
             lines = [
                 (
                     float(theta),
@@ -775,14 +864,14 @@ def plot_psi_orientation_profiles(
                 )
                 for ori_idx, theta in enumerate(ori)
             ]
-            per_model.append((model_name, lines))
+            per_model.append((model_name, mean_line, lines))
         summaries.append((d, per_model))
 
     all_x = torch.cat(
         [
             xs
             for _, per_model in summaries
-            for _, lines in per_model
+            for _, _, lines in per_model
             for _, xs, mean_y in lines
             if xs.numel() and mean_y.numel()
         ]
@@ -791,7 +880,7 @@ def plot_psi_orientation_profiles(
         [
             mean_y
             for _, per_model in summaries
-            for _, lines in per_model
+            for _, _, lines in per_model
             for _, xs, mean_y in lines
             if xs.numel() and mean_y.numel()
         ]
@@ -812,8 +901,17 @@ def plot_psi_orientation_profiles(
     cmap = plt.get_cmap("twilight_shifted")
     norm = colors.Normalize(vmin=float(ori.min()), vmax=float(ori.max()))
     for row, (d, per_model) in enumerate(summaries):
-        for col, (model_name, lines) in enumerate(per_model):
+        for col, (model_name, mean_line, lines) in enumerate(per_model):
             ax = axes[row, col]
+            mean_xs, mean_y = mean_line
+            if mean_xs.numel() and mean_y.numel():
+                ax.plot(
+                    mean_xs,
+                    mean_y,
+                    linewidth=1.6,
+                    color="black",
+                    label="overall mean",
+                )
             for theta, xs, mean_y in lines:
                 ax.plot(xs, mean_y, linewidth=1.1, color=cmap(norm(theta)))
             ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
@@ -938,22 +1036,35 @@ def main():
         help="Polar grid resolution: radial samples including origin, angular samples per ring.",
     )
     parser.add_argument("--N-ori", type=int, default=8)
-    parser.add_argument("--space-extent", type=float, default=200.0)
+    parser.add_argument("--space-extent", type=float, default=1000.0)
     parser.add_argument(
         "--response-mode",
         choices=("matrix", "matrix_approx"),
         default="matrix_approx",
     )
     parser.add_argument("--approx-order", type=int, default=8)
-    parser.add_argument("--dh", type=float, default=10000.0)
+    parser.add_argument("--dh", type=float, default=1.0)
     parser.add_argument(
         "--dh-values",
         type=float,
         nargs="+",
         help=(
             "Perturbation strengths used as profile rows. "
-            "Defaults to -2, -1, 0, 1, 2 times --dh."
+            "Defaults to one excitatory unit, equal to --dh."
         ),
+    )
+    parser.add_argument(
+        "--perturb-cell-types",
+        choices=["PYR", "PV"],
+        nargs="+",
+        default=["PYR"],
+        help="Cell types to perturb. Defaults to the central horizontal PYR neuron only.",
+    )
+    parser.add_argument(
+        "--distance-max",
+        type=float,
+        default=500.0,
+        help="Maximum distance included in distance and psi summaries.",
     )
     parser.add_argument("--max-neurons", type=int, default=50000)
     parser.add_argument("--seed", type=int, default=0)
@@ -975,7 +1086,7 @@ def main():
     parser.add_argument("--dpi", type=int, default=300)
     args = parser.parse_args()
     if args.dh_values is None:
-        args.dh_values = default_dh_values(args.dh)
+        args.dh_values = (args.dh,)
     validate_args(parser, args)
 
     fit = args.fit or sorted_fit_paths(args.fits_dir)[args.fit_index]
@@ -988,7 +1099,7 @@ def main():
         seed_dir = Path("results") / args.experiment_name / f"seed_{seed}"
         write_perturbation_note(seed_dir, args, fit, seed)
 
-        for perturb_cell_type in CELL_TYPES:
+        for perturb_cell_type in args.perturb_cell_types:
             x, _ = make_polar_grid(
                 args.N_space, args.N_ori, args.space_extent, CELL_TYPES
             )
@@ -1051,6 +1162,7 @@ def main():
                             out,
                             args.dpi,
                             args.dh,
+                            max_distance=args.distance_max,
                         )
                         plt.close(fig)
                         print(f"Saved {out} using fit {fit}.")
@@ -1075,6 +1187,7 @@ def main():
                             out,
                             args.dpi,
                             args.dh,
+                            max_distance=args.distance_max,
                         )
                         plt.close(fig)
                         print(f"Saved {out} using fit {fit}.")
@@ -1127,6 +1240,7 @@ def main():
                         ),
                         out,
                         args.dpi,
+                        max_distance=args.distance_max,
                     )
                     plt.close(fig)
                     print(f"Saved {out} using fit {fit}.")
@@ -1151,6 +1265,7 @@ def main():
                         ),
                         out,
                         args.dpi,
+                        max_distance=args.distance_max,
                     )
                     plt.close(fig)
                     print(f"Saved {out} using fit {fit}.")

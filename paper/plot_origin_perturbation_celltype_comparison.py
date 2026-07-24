@@ -41,6 +41,8 @@ def validate_args(parser, args):
         parser.error("--N-ori must be even so the grid contains horizontal ori=0.")
     if args.fit is not None and args.fit_index != 0:
         parser.error("Use either --fit or --fit-index, not both.")
+    if not args.perturb_cell_types:
+        parser.error("--perturb-cell-types must contain at least one cell type.")
 
     N_total = len(CELL_TYPES) * args.N_space[0] * args.N_space[1] * args.N_ori
     if args.max_neurons is not None and N_total > args.max_neurons:
@@ -116,7 +118,8 @@ def write_perturbation_note(seed_dir, args, fit, seed):
         f"heatmap_extent_um={' '.join(f'{v:g}' for v in args.heatmap_extent)}\n"
         f"response_mode={args.response_mode}\n"
         f"approx_order={args.approx_order}\n"
-        "heatmap_layout=one file per model; rows=dh_values; columns=orientation plus all-orientation mean\n"
+        f"gain_values={' '.join(label.splitlines()[0].split('=')[1] for label, _ in MODEL_VARIANTS)}\n"
+        "heatmap_layout=one file per model and color mode; rows=dh_values; columns=orientation plus all-orientation mean\n"
         "distance_profile_layout=one file per model; rows=dh_values; over_distance=overall mean; over_distance_by_orientation=mean lines by orientation preference\n"
         "model_comparison_layout=rows=dh_values; columns=models; values=mean over PYR/PV and orientation\n"
         "heatmap_note=responses are solved once for unit dh and scaled linearly for dh_values.\n"
@@ -214,12 +217,17 @@ def mean_profile_line(xs, ys, *, bins=None, bin_range=None):
     return unique_x, torch.stack(mean_y)
 
 
-def distance_orientation_mean_lines(panel, distance, origin_mask, ori, *, bins=32):
-    distances = distance[~origin_mask].reshape(-1)
+def distance_orientation_mean_lines(
+    panel, distance, origin_mask, ori, *, bins=32, max_distance=None
+):
+    spatial_mask = ~origin_mask
+    if max_distance is not None:
+        spatial_mask = spatial_mask & (distance <= max_distance)
+    distances = distance[spatial_mask].reshape(-1)
     bin_range = (0.0, float(distances.max())) if distances.numel() else None
     lines = []
     for ori_idx, theta in enumerate(ori):
-        responses = panel[..., ori_idx][~origin_mask].reshape(-1)
+        responses = panel[..., ori_idx][spatial_mask].reshape(-1)
         finite = torch.isfinite(distances) & torch.isfinite(responses)
         if not finite.any():
             continue
@@ -230,9 +238,14 @@ def distance_orientation_mean_lines(panel, distance, origin_mask, ori, *, bins=3
     return lines
 
 
-def distance_overall_mean_line(panel, distance, origin_mask, *, bins=32):
-    selected = panel[~origin_mask, :]
-    distances = distance[~origin_mask].unsqueeze(-1).expand_as(selected)
+def distance_overall_mean_line(
+    panel, distance, origin_mask, *, bins=32, max_distance=None
+):
+    spatial_mask = ~origin_mask
+    if max_distance is not None:
+        spatial_mask = spatial_mask & (distance <= max_distance)
+    selected = panel[spatial_mask, :]
+    distances = distance[spatial_mask].unsqueeze(-1).expand_as(selected)
     xs = distances.reshape(-1)
     ys = selected.reshape(-1)
     finite = torch.isfinite(xs) & torch.isfinite(ys)
@@ -242,7 +255,7 @@ def distance_overall_mean_line(panel, distance, origin_mask, *, bins=32):
         xs[finite],
         ys[finite],
         bins=bins,
-        bin_range=(0.0, float(distance[~origin_mask].max())),
+        bin_range=(0.0, float(distance[spatial_mask].max())),
     )
 
 
@@ -251,8 +264,11 @@ def value_mask(values, target):
     return (values - target).abs() <= tol
 
 
-def selected_distance_values(distance, origin_mask, count=4):
-    distances = torch.unique(distance[~origin_mask]).sort().values
+def selected_distance_values(distance, origin_mask, count=4, max_distance=None):
+    spatial_mask = ~origin_mask
+    if max_distance is not None:
+        spatial_mask = spatial_mask & (distance <= max_distance)
+    distances = torch.unique(distance[spatial_mask]).sort().values
     if distances.numel() <= count:
         return distances
 
@@ -397,7 +413,16 @@ def plot_psi_distance_profiles(
 
 
 def plot_distance_orientation_profiles(
-    x, responses, response_cell_type, perturb_idx, distance, title, out, dpi
+    x,
+    responses,
+    response_cell_type,
+    perturb_idx,
+    distance,
+    title,
+    out,
+    dpi,
+    *,
+    max_distance=None,
 ):
     _, _, _, origin_mask = grid_metadata(x, perturb_idx)
     cell_types = list(x["cell_type"].categories)
@@ -410,7 +435,9 @@ def plot_distance_orientation_profiles(
         profiles.append(
             (
                 model_name,
-                distance_orientation_mean_lines(panel, distance, origin_mask, ori),
+                distance_orientation_mean_lines(
+                    panel, distance, origin_mask, ori, max_distance=max_distance
+                ),
             )
         )
 
@@ -482,6 +509,7 @@ def plot_response_strength_distance_profiles(
     out,
     dpi,
     default_dh=10000.0,
+    max_distance=None,
 ):
     _, _, _, origin_mask = grid_metadata(x, response_items[0][2])
     cell_types = list(x["cell_type"].categories)
@@ -493,7 +521,9 @@ def plot_response_strength_distance_profiles(
         profiles.append(
             (
                 dh,
-                *distance_overall_mean_line(panel, distance, origin_mask),
+                *distance_overall_mean_line(
+                    panel, distance, origin_mask, max_distance=max_distance
+                ),
             )
         )
 
@@ -537,6 +567,7 @@ def plot_response_strength_distance_orientation_profiles(
     out,
     dpi,
     default_dh=10000.0,
+    max_distance=None,
 ):
     _, _, _, origin_mask = grid_metadata(x, response_items[0][2])
     cell_types = list(x["cell_type"].categories)
@@ -549,7 +580,9 @@ def plot_response_strength_distance_orientation_profiles(
         profiles.append(
             (
                 dh,
-                distance_orientation_mean_lines(panel, distance, origin_mask, ori),
+                distance_orientation_mean_lines(
+                    panel, distance, origin_mask, ori, max_distance=max_distance
+                ),
             )
         )
 
@@ -708,27 +741,40 @@ def main():
         "--heatmap-extent",
         type=float,
         nargs=2,
-        default=(100.0, 100.0),
+        default=(1000.0, 1000.0),
         metavar=("WIDTH_UM", "HEIGHT_UM"),
         help="Physical heatmap window centered on the perturbation.",
     )
     parser.add_argument("--N-ori", type=int, default=8)
-    parser.add_argument("--space-extent", type=float, default=200.0)
+    parser.add_argument("--space-extent", type=float, default=1000.0)
     parser.add_argument(
         "--response-mode",
         choices=("matrix", "matrix_approx"),
         default="matrix_approx",
     )
     parser.add_argument("--approx-order", type=int, default=8)
-    parser.add_argument("--dh", type=float, default=10000.0)
+    parser.add_argument("--dh", type=float, default=1.0)
     parser.add_argument(
         "--dh-values",
         type=float,
         nargs="+",
         help=(
             "Perturbation strengths used as heatmap/profile rows. "
-            "Defaults to -2, -1, 0, 1, 2 times --dh."
+            "Defaults to one excitatory unit, equal to --dh."
         ),
+    )
+    parser.add_argument(
+        "--perturb-cell-types",
+        choices=["PYR", "PV"],
+        nargs="+",
+        default=["PYR"],
+        help="Cell types to perturb. Defaults to the central horizontal PYR neuron only.",
+    )
+    parser.add_argument(
+        "--distance-max",
+        type=float,
+        default=500.0,
+        help="Maximum distance included in response-over-distance plots.",
     )
     parser.add_argument("--max-neurons", type=int, default=50000)
     parser.add_argument("--seed", type=int, default=0)
@@ -750,7 +796,7 @@ def main():
     parser.add_argument("--dpi", type=int, default=300)
     args = parser.parse_args()
     if args.dh_values is None:
-        args.dh_values = default_dh_values(args.dh)
+        args.dh_values = (args.dh,)
     validate_args(parser, args)
 
     fit = args.fit or sorted_fit_paths(args.fits_dir)[args.fit_index]
@@ -763,7 +809,7 @@ def main():
         seed_dir = Path("results") / args.experiment_name / f"seed_{seed}"
         write_perturbation_note(seed_dir, args, fit, seed)
 
-        for perturb_cell_type in CELL_TYPES:
+        for perturb_cell_type in args.perturb_cell_types:
             x = make_grid(args.N_space, args.N_ori, args.space_extent, CELL_TYPES)
             perturb_idx = perturb_origin_horizontal(x, perturb_cell_type, 1.0)
             unit_responses = compute_responses(
@@ -779,21 +825,23 @@ def main():
                 for model_name, dr in scale_responses(unit_responses, dh).items():
                     heatmap_items[model_name].append((dh, dr, perturb_idx))
 
-            out = (
-                seed_dir
-                / f"perturb_{perturb_cell_type}_response_all_neurons_model_comparison.pdf"
-            )
-            fig = plot_all_neuron_model_comparison_heatmap(
-                x,
-                heatmap_items,
-                out,
-                args.dpi,
-                args.heatmap_N_space,
-                args.heatmap_extent,
-                args.dh,
-            )
-            plt.close(fig)
-            print(f"Saved {out} using fit {fit}.")
+            for color_mode, suffix in (("viridis", ""), ("binary", "_binary_sign")):
+                out = (
+                    seed_dir
+                    / f"perturb_{perturb_cell_type}_response_all_neurons_model_comparison{suffix}.pdf"
+                )
+                fig = plot_all_neuron_model_comparison_heatmap(
+                    x,
+                    heatmap_items,
+                    out,
+                    args.dpi,
+                    args.heatmap_N_space,
+                    args.heatmap_extent,
+                    args.dh,
+                    color_mode=color_mode,
+                )
+                plt.close(fig)
+                print(f"Saved {out} using fit {fit}.")
 
             if not args.only_heatmaps:
                 responses = scale_responses(unit_responses, args.dh)
@@ -801,26 +849,31 @@ def main():
 
             for response_cell_type in CELL_TYPES:
                 for model_name, items in heatmap_items.items():
-                    out = (
-                        seed_dir
-                        / (
-                            f"perturb_{perturb_cell_type}_response_{response_cell_type}"
-                            f"_{model_slug(model_name)}.pdf"
+                    for color_mode, suffix in (
+                        ("viridis", ""),
+                        ("binary", "_binary_sign"),
+                    ):
+                        out = (
+                            seed_dir
+                            / (
+                                f"perturb_{perturb_cell_type}_response_{response_cell_type}"
+                                f"_{model_slug(model_name)}{suffix}.pdf"
+                            )
                         )
-                    )
-                    fig = plot_response_strength_heatmap(
-                        x,
-                        model_name,
-                        items,
-                        response_cell_type,
-                        out,
-                        args.dpi,
-                        args.heatmap_N_space,
-                        args.heatmap_extent,
-                        args.dh,
-                    )
-                    plt.close(fig)
-                    print(f"Saved {out} using fit {fit}.")
+                        fig = plot_response_strength_heatmap(
+                            x,
+                            model_name,
+                            items,
+                            response_cell_type,
+                            out,
+                            args.dpi,
+                            args.heatmap_N_space,
+                            args.heatmap_extent,
+                            args.dh,
+                            color_mode=color_mode,
+                        )
+                        plt.close(fig)
+                        print(f"Saved {out} using fit {fit}.")
 
                     if args.only_heatmaps:
                         continue
@@ -845,6 +898,7 @@ def main():
                         out,
                         args.dpi,
                         args.dh,
+                        max_distance=args.distance_max,
                     )
                     plt.close(fig)
                     print(f"Saved {out} using fit {fit}.")
@@ -869,6 +923,7 @@ def main():
                         out,
                         args.dpi,
                         args.dh,
+                        max_distance=args.distance_max,
                     )
                     plt.close(fig)
                     print(f"Saved {out} using fit {fit}.")
