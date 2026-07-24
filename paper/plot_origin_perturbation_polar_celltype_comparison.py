@@ -189,6 +189,7 @@ def write_perturbation_note(seed_dir, args, fit, seed):
         f"dh_sign={sign}\n"
         f"dh_values={' '.join(f'{dh:g}' for dh in args.dh_values)}\n"
         f"dh_value_signs={' '.join(perturbation_sign(dh) for dh in args.dh_values)}\n"
+        f"polar_circle_radius_um={args.space_extent / 2:g}\n"
         f"response_mode={args.response_mode}\n"
         f"approx_order={args.approx_order}\n"
         "distance_profile_layout=one file per model; rows=dh_values; over_distance=overall mean; over_distance_by_orientation=mean lines by orientation preference\n"
@@ -938,7 +939,12 @@ def main():
         help="Polar grid resolution: radial samples including origin, angular samples per ring.",
     )
     parser.add_argument("--N-ori", type=int, default=8)
-    parser.add_argument("--space-extent", type=float, default=200.0)
+    parser.add_argument(
+        "--space-extent",
+        type=float,
+        default=1000.0,
+        help="Diameter of the modeled polar disk in um.",
+    )
     parser.add_argument(
         "--response-mode",
         choices=("matrix", "matrix_approx"),
