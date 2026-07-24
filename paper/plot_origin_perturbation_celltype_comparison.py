@@ -112,6 +112,7 @@ def write_perturbation_note(seed_dir, args, fit, seed):
         f"response_mode={args.response_mode}\n"
         f"approx_order={args.approx_order}\n"
         "heatmap_layout=one file per model; rows=dh_values; columns=orientation plus all-orientation mean\n"
+        "distance_profile_layout=one file per model; rows=dh_values; lines=mean response by orientation preference\n"
         "model_comparison_layout=rows=dh_values; columns=models; values=mean over PYR/PV and orientation\n"
         "heatmap_note=responses are solved once for unit dh and scaled linearly for dh_values.\n"
         "baseline_activity=model.f(model.vf)\n"
@@ -450,6 +451,82 @@ def plot_distance_orientation_profiles(
     return fig
 
 
+def plot_response_strength_distance_profiles(
+    x, model_name, response_items, response_cell_type, distance, title, out, dpi
+):
+    _, _, _, origin_mask = grid_metadata(x, response_items[0][2])
+    cell_types = list(x["cell_type"].categories)
+    cell_idx = cell_types.index(response_cell_type)
+    ori = orientation_values(x)
+
+    profiles = []
+    for dh, dr, perturb_idx in response_items:
+        panel = response_panel(dr, cell_idx, perturb_idx)
+        profiles.append(
+            (
+                dh,
+                distance_orientation_mean_lines(panel, distance, origin_mask, ori),
+            )
+        )
+
+    all_x = torch.cat(
+        [
+            line_x
+            for _, lines in profiles
+            for _, line_x, mean_y in lines
+            if line_x.numel() and mean_y.numel()
+        ]
+    )
+    all_y = torch.cat(
+        [
+            mean_y
+            for _, lines in profiles
+            for _, line_x, mean_y in lines
+            if line_x.numel() and mean_y.numel()
+        ]
+    )
+    xlim = padded_limits(all_x, lower_bound=0.0)
+    ylim = padded_limits(all_y)
+
+    nrows = len(profiles)
+    fig, axes = plt.subplots(
+        nrows,
+        1,
+        figsize=(6.6, 1.55 * nrows),
+        sharex=True,
+        sharey=True,
+        constrained_layout=True,
+        squeeze=False,
+    )
+    cmap = plt.get_cmap("twilight_shifted")
+    norm = colors.Normalize(vmin=float(ori.min()), vmax=float(ori.max()))
+    for row, (dh, lines) in enumerate(profiles):
+        ax = axes[row, 0]
+        for theta, line_x, mean_y in lines:
+            ax.plot(
+                line_x,
+                mean_y,
+                linewidth=1.2,
+                color=cmap(norm(theta)),
+            )
+        ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
+        ax.set_xlim(*xlim)
+        ax.set_ylim(*ylim)
+        ax.set_ylabel(f"dh={dh:g}\n{response_cell_type}")
+
+    fig.suptitle(f"{model_name}\n{title}")
+    axes[-1, 0].set_xlabel("Distance from perturbed neuron (um)")
+    cbar = fig.colorbar(
+        plt.cm.ScalarMappable(norm=norm, cmap=cmap),
+        ax=axes,
+        shrink=0.8,
+    )
+    cbar.set_label("Preferred orientation (deg)")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=dpi, bbox_inches="tight")
+    return fig
+
+
 def plot_scatter_profile(
     x,
     responses,
@@ -649,28 +726,28 @@ def main():
                     plt.close(fig)
                     print(f"Saved {out} using fit {fit}.")
 
-                out = (
-                    seed_dir
-                    / (
-                        f"perturb_{perturb_cell_type}_response_{response_cell_type}"
-                        "_over_distance.pdf"
+                    out = (
+                        seed_dir
+                        / (
+                            f"perturb_{perturb_cell_type}_response_{response_cell_type}"
+                            f"_{model_slug(model_name)}_over_distance.pdf"
+                        )
                     )
-                )
-                fig = plot_distance_orientation_profiles(
-                    x,
-                    responses,
-                    response_cell_type,
-                    perturb_idx,
-                    distance,
-                    (
-                        f"perturb {perturb_cell_type}, {response_cell_type} response, "
-                        "response over distance"
-                    ),
-                    out,
-                    args.dpi,
-                )
-                plt.close(fig)
-                print(f"Saved {out} using fit {fit}.")
+                    fig = plot_response_strength_distance_profiles(
+                        x,
+                        model_name,
+                        items,
+                        response_cell_type,
+                        distance,
+                        (
+                            f"perturb {perturb_cell_type}, {response_cell_type} response, "
+                            "response over distance"
+                        ),
+                        out,
+                        args.dpi,
+                    )
+                    plt.close(fig)
+                    print(f"Saved {out} using fit {fit}.")
 
                 out = (
                     seed_dir

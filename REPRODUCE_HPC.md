@@ -204,13 +204,14 @@ Expected spatial-response outputs:
 ```text
 results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_original_paper_gamma_0.pdf
 results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_direct_mapping_gamma_1.pdf
+results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_original_paper_gamma_0_over_distance.pdf
+results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_direct_mapping_gamma_1_over_distance.pdf
 results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_all_neurons_model_comparison.pdf
 ```
 
 The script also writes profile outputs for each perturb/response combination:
 
 ```text
-results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_over_distance.pdf
 results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_over_orientation.pdf
 results/origin_horizontal_perturbation_polar_psi/seed_0/perturb_<PERTURB>_response_<RESPONSE>_over_psi.pdf
 ```
@@ -222,7 +223,7 @@ are the perturbation strengths from `--dh-values`, columns are the orientation
 selectivity bins, and the final column plots all orientation-selective neurons
 together by averaging across orientation at each spatial location. Colors show
 `perturbed_activity - baseline_activity` with the `viridis` colormap. The
-default simulation grid is `100 x 100`, and heatmaps show the central `50 x 50`
+default simulation grid is `50 x 50`, and heatmaps show the central `50 x 50`
 um region. The default heatmap strengths are `-10000, -5000, 0, 5000, 10000`,
 so the sweep includes negative, zero, and positive perturbations. The heatmap
 sweep is solved once for a unit perturbation and then scaled linearly across
@@ -232,13 +233,16 @@ The combined model-comparison heatmap has one row per perturbation strength and
 one column per model. Each panel averages responses over PYR/PV cell types and
 all orientation bins at each spatial location.
 
-The distance and preferred-orientation profile figures use two vertically
-aligned scatter subplots plus a final mean-response subplot, with shared axis
-limits only for the scatter subplots and a tighter response range for the mean
-subplot. The psi profile figure uses four distance rows and two preferred
-orientation columns, with 0 deg on the left and -90 deg on the right; each
-subplot overlays both models and shows the mean response over psi with a
-shaded min-to-max range for the selected distance and orientation.
+The distance profile figures are split into separate files for the original
+model and the direct mapping model. Each distance figure has one row per
+perturbation strength, and each row plots the mean response over distance with
+lines colored by the response neuron's orientation preference. The preferred
+orientation profile figure keeps the two vertically aligned scatter subplots
+plus a final mean-response subplot. The psi profile figure uses four distance
+rows and two preferred orientation columns, with 0 deg on the left and -90 deg
+on the right; each subplot overlays both models and shows the mean response
+over psi with a shaded min-to-max range for the selected distance and
+orientation.
 
 The two model variants are:
 
