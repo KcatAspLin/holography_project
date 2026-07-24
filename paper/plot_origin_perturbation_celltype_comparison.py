@@ -795,11 +795,9 @@ def main():
             plt.close(fig)
             print(f"Saved {out} using fit {fit}.")
 
-            if args.only_heatmaps:
-                continue
-
-            responses = scale_responses(unit_responses, args.dh)
-            rel_ori, distance, psi, _ = grid_metadata(x, perturb_idx)
+            if not args.only_heatmaps:
+                responses = scale_responses(unit_responses, args.dh)
+                rel_ori, distance, psi, _ = grid_metadata(x, perturb_idx)
 
             for response_cell_type in CELL_TYPES:
                 for model_name, items in heatmap_items.items():
@@ -823,6 +821,9 @@ def main():
                     )
                     plt.close(fig)
                     print(f"Saved {out} using fit {fit}.")
+
+                    if args.only_heatmaps:
+                        continue
 
                     out = (
                         seed_dir
@@ -871,6 +872,9 @@ def main():
                     )
                     plt.close(fig)
                     print(f"Saved {out} using fit {fit}.")
+
+                if args.only_heatmaps:
+                    continue
 
                 out = (
                     seed_dir
