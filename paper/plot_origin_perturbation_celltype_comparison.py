@@ -112,7 +112,7 @@ def write_perturbation_note(seed_dir, args, fit, seed):
         f"response_mode={args.response_mode}\n"
         f"approx_order={args.approx_order}\n"
         "heatmap_layout=one file per model; rows=dh_values; columns=orientation plus all-orientation mean\n"
-        "distance_profile_layout=one file per model; rows=dh_values; lines=mean response by orientation preference\n"
+        "distance_profile_layout=one file per model; rows=dh_values; over_distance=overall mean; over_distance_by_orientation=mean lines by orientation preference\n"
         "model_comparison_layout=rows=dh_values; columns=models; values=mean over PYR/PV and orientation\n"
         "heatmap_note=responses are solved once for unit dh and scaled linearly for dh_values.\n"
         "baseline_activity=model.f(model.vf)\n"
@@ -223,6 +223,22 @@ def distance_orientation_mean_lines(panel, distance, origin_mask, ori, *, bins=3
         )
         lines.append((float(theta), line_x, mean_y))
     return lines
+
+
+def distance_overall_mean_line(panel, distance, origin_mask, *, bins=32):
+    selected = panel[~origin_mask, :]
+    distances = distance[~origin_mask].unsqueeze(-1).expand_as(selected)
+    xs = distances.reshape(-1)
+    ys = selected.reshape(-1)
+    finite = torch.isfinite(xs) & torch.isfinite(ys)
+    if not finite.any():
+        return torch.tensor([]), torch.tensor([])
+    return mean_profile_line(
+        xs[finite],
+        ys[finite],
+        bins=bins,
+        bin_range=(0.0, float(distance[~origin_mask].max())),
+    )
 
 
 def value_mask(values, target):
@@ -438,7 +454,7 @@ def plot_distance_orientation_profiles(
         ax.set_ylim(*ylim)
         ax.set_ylabel(f"{model_name}\n{response_cell_type}")
 
-    axes[0, 0].set_title(title)
+    axes[0, 0].set_title(f"{title}\nresponse = perturbed - baseline activity")
     axes[-1, 0].set_xlabel("Distance from perturbed neuron (um)")
     cbar = fig.colorbar(
         plt.cm.ScalarMappable(norm=norm, cmap=cmap),
@@ -452,6 +468,53 @@ def plot_distance_orientation_profiles(
 
 
 def plot_response_strength_distance_profiles(
+    x, model_name, response_items, response_cell_type, distance, title, out, dpi
+):
+    _, _, _, origin_mask = grid_metadata(x, response_items[0][2])
+    cell_types = list(x["cell_type"].categories)
+    cell_idx = cell_types.index(response_cell_type)
+
+    profiles = []
+    for dh, dr, perturb_idx in response_items:
+        panel = response_panel(dr, cell_idx, perturb_idx)
+        profiles.append(
+            (
+                dh,
+                *distance_overall_mean_line(panel, distance, origin_mask),
+            )
+        )
+
+    all_x = torch.cat([line_x for _, line_x, mean_y in profiles if line_x.numel()])
+    all_y = torch.cat([mean_y for _, line_x, mean_y in profiles if mean_y.numel()])
+    xlim = padded_limits(all_x, lower_bound=0.0)
+    ylim = padded_limits(all_y)
+
+    nrows = len(profiles)
+    fig, axes = plt.subplots(
+        nrows,
+        1,
+        figsize=(6.6, 1.55 * nrows),
+        sharex=True,
+        sharey=True,
+        constrained_layout=True,
+        squeeze=False,
+    )
+    for row, (dh, line_x, mean_y) in enumerate(profiles):
+        ax = axes[row, 0]
+        ax.plot(line_x, mean_y, linewidth=1.4, color="C0")
+        ax.axhline(0.0, color="black", linewidth=0.6, alpha=0.6)
+        ax.set_xlim(*xlim)
+        ax.set_ylim(*ylim)
+        ax.set_ylabel(f"dh={dh:g}\n{response_cell_type}")
+
+    fig.suptitle(f"{model_name}\n{title}\nresponse = perturbed - baseline activity")
+    axes[-1, 0].set_xlabel("Distance from perturbed neuron (um)")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=dpi, bbox_inches="tight")
+    return fig
+
+
+def plot_response_strength_distance_orientation_profiles(
     x, model_name, response_items, response_cell_type, distance, title, out, dpi
 ):
     _, _, _, origin_mask = grid_metadata(x, response_items[0][2])
@@ -514,7 +577,7 @@ def plot_response_strength_distance_profiles(
         ax.set_ylim(*ylim)
         ax.set_ylabel(f"dh={dh:g}\n{response_cell_type}")
 
-    fig.suptitle(f"{model_name}\n{title}")
+    fig.suptitle(f"{model_name}\n{title}\nresponse = perturbed - baseline activity")
     axes[-1, 0].set_xlabel("Distance from perturbed neuron (um)")
     cbar = fig.colorbar(
         plt.cm.ScalarMappable(norm=norm, cmap=cmap),
@@ -742,6 +805,29 @@ def main():
                         (
                             f"perturb {perturb_cell_type}, {response_cell_type} response, "
                             "response over distance"
+                        ),
+                        out,
+                        args.dpi,
+                    )
+                    plt.close(fig)
+                    print(f"Saved {out} using fit {fit}.")
+
+                    out = (
+                        seed_dir
+                        / (
+                            f"perturb_{perturb_cell_type}_response_{response_cell_type}"
+                            f"_{model_slug(model_name)}_over_distance_by_orientation.pdf"
+                        )
+                    )
+                    fig = plot_response_strength_distance_orientation_profiles(
+                        x,
+                        model_name,
+                        items,
+                        response_cell_type,
+                        distance,
+                        (
+                            f"perturb {perturb_cell_type}, {response_cell_type} response, "
+                            "response over distance by orientation preference"
                         ),
                         out,
                         args.dpi,

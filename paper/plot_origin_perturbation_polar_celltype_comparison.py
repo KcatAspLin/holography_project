@@ -567,7 +567,7 @@ def plot_distance_orientation_profiles(
         ax.set_ylim(*ylim)
         ax.set_ylabel(f"{model_name}\n{response_cell_type}")
 
-    axes[0, 0].set_title(title)
+    axes[0, 0].set_title(f"{title}\nresponse = perturbed - baseline activity")
     axes[-1, 0].set_xlabel("Distance from perturbed neuron (um)")
     cbar = fig.colorbar(
         plt.cm.ScalarMappable(norm=norm, cmap=cmap),

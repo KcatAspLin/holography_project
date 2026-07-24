@@ -206,6 +206,8 @@ results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPON
 results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_direct_mapping_gamma_1.pdf
 results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_original_paper_gamma_0_over_distance.pdf
 results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_direct_mapping_gamma_1_over_distance.pdf
+results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_original_paper_gamma_0_over_distance_by_orientation.pdf
+results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_<RESPONSE>_direct_mapping_gamma_1_over_distance_by_orientation.pdf
 results/origin_horizontal_perturbation/seed_0/perturb_<PERTURB>_response_all_neurons_model_comparison.pdf
 ```
 
@@ -234,15 +236,16 @@ one column per model. Each panel averages responses over PYR/PV cell types and
 all orientation bins at each spatial location.
 
 The distance profile figures are split into separate files for the original
-model and the direct mapping model. Each distance figure has one row per
-perturbation strength, and each row plots the mean response over distance with
-lines colored by the response neuron's orientation preference. The preferred
-orientation profile figure keeps the two vertically aligned scatter subplots
-plus a final mean-response subplot. The psi profile figure uses four distance
-rows and two preferred orientation columns, with 0 deg on the left and -90 deg
-on the right; each subplot overlays both models and shows the mean response
-over psi with a shaded min-to-max range for the selected distance and
-orientation.
+model and the direct mapping model. The `_over_distance.pdf` files plot the
+overall mean response over distance, averaging across orientation preferences.
+The `_over_distance_by_orientation.pdf` files plot separate mean response lines
+colored by the response neuron's orientation preference. Both distance-profile
+layouts have one row per perturbation strength. The preferred orientation
+profile figure keeps the two vertically aligned scatter subplots plus a final
+mean-response subplot. The psi profile figure uses four distance rows and two
+preferred orientation columns, with 0 deg on the left and -90 deg on the right;
+each subplot overlays both models and shows the mean response over psi with a
+shaded min-to-max range for the selected distance and orientation.
 
 The two model variants are:
 
